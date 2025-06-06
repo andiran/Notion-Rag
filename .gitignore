@@ -1,0 +1,145 @@
+@@ -0,0 +1,79 @@
+# Notion RAG 專案 .gitignore
+
+# ====================
+# 機敏資料
+# ====================
+# API憑證和設定
+.env
+*.token
+*.key
+config/.env
+*.pem
+*.p12
+*.pfx
+*.key
+*.crt
+*.cer
+*.der
+
+# ====================
+# 資料庫和快取
+# ====================
+# 向量資料庫
+vector_db/
+vector_db
+*.faiss
+*.index
+*.ann
+*.hnsw
+
+# SQLite資料庫
+*.db
+metadata.db
+*.sqlite
+*.sqlite3
+
+# 快取
+cache/
+.cache/
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ====================
+# Python
+# ====================
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv*/
+*.egg-info/
+dist/
+build/
+*.egg
+.python-version
+.python-version.*
+poetry.lock
+Pipfile.lock
+
+# ====================
+# 機器學習
+# ====================
+# 模型檔案
+models/
+*.bin
+*.safetensors
+*.pth
+*.pt
+*.onnx
+*.h5
+*.hdf5
+*.ckpt
+*.pkl
+*.joblib
+
+# Transformers快取
+.cache/huggingface/
+sentence_transformers/
+transformers/
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# ====================
+# macOS
+# ====================
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+Icon
+.Spotlight-V100
+.Trashes
+
+# ====================
+# IDE
+# ====================
+# VS Code
+.vscode/
+.history/
+*.code-workspace
+.idea/
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# ====================
+# 日誌和測試
+# ====================
+*.log
+logs/
+test_data/
+debug/
+test/
+coverage/
+.coverage
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# ====================
+# 重要檔案保留
+# ====================
+!README.md
+!requirements.txt
+!config/settings_template.py
+!LICENSE
+!CHANGELOG.md
+!CONTRIBUTING.md
+!docs/
+!examples/
