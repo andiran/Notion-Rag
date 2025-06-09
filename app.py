@@ -183,7 +183,7 @@ def main():
         # 初始化按鈕
         if st.button("🔄 重新初始化系統", type="secondary"):
             st.cache_resource.clear()
-            st.rerun()
+            st.experimental_rerun()
         
         # 更新Notion內容按鈕
         if st.button("📄 更新Notion內容", type="secondary"):
@@ -263,7 +263,7 @@ def main():
         with col_clear:
             if st.button("🗑️ 清空對話", type="secondary", use_container_width=True):
                 st.session_state.messages = []
-                st.rerun()
+                st.experimental_rerun()
         
         # 處理問題
         if ask_button and question.strip():
@@ -281,7 +281,7 @@ def main():
             
             # 清空輸入並重新載入
             st.session_state.current_question = ""
-            st.rerun()
+            st.experimental_rerun()
     
     with col2:
         st.header("📊 系統狀態")

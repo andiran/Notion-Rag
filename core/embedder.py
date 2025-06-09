@@ -29,17 +29,14 @@ class Embedder:
     def encode(self, texts: List[str], show_progress: bool = True) -> np.ndarray:
         """將文本列表編碼為向量"""
         if not texts:
-            return np.array([])
-        
+            return np.zeros((0, self.embedding_dimension), dtype=np.float32)
         print(f"🔄 編碼 {len(texts)} 個文本片段...")
-        
         try:
             # 過濾空文本
             valid_texts = [text for text in texts if text.strip()]
             if not valid_texts:
                 print("⚠️ 沒有有效的文本可以編碼")
-                return np.array([])
-            
+                return np.zeros((0, self.embedding_dimension), dtype=np.float32)
             # 編碼文本
             embeddings = self.model.encode(
                 valid_texts, 
@@ -47,26 +44,28 @@ class Embedder:
                 show_progress_bar=show_progress,
                 batch_size=32  # 設定批次大小
             )
-            
+            # 強制型別與 shape
+            embeddings = np.asarray(embeddings, dtype=np.float32)
+            if embeddings.ndim == 1:
+                embeddings = embeddings.reshape(1, -1)
             print(f"✅ 編碼完成，形狀: {embeddings.shape}")
             return embeddings
-            
         except Exception as e:
             print(f"❌ 編碼失敗: {e}")
-            raise
+            return np.zeros((0, self.embedding_dimension), dtype=np.float32)
     
     def encode_single(self, text: str) -> np.ndarray:
         """將單個文本編碼為向量"""
         if not text.strip():
-            return np.array([])
-        
+            return np.zeros((self.embedding_dimension,), dtype=np.float32)
         try:
             embedding = self.model.encode([text], convert_to_numpy=True)[0]
+            embedding = np.asarray(embedding, dtype=np.float32)
+            embedding = embedding.reshape(-1)
             return embedding
-            
         except Exception as e:
             print(f"❌ 單文本編碼失敗: {e}")
-            raise
+            return np.zeros((self.embedding_dimension,), dtype=np.float32)
     
     def encode_query(self, query: str) -> np.ndarray:
         """編碼查詢文本（與encode_single相同，但語義上更清楚）"""

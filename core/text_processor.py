@@ -1,5 +1,5 @@
 import re
-from typing import List
+from typing import List, Any, Dict
 
 class TextProcessor:
     """文本處理器"""
@@ -197,3 +197,163 @@ class TextProcessor:
             "min_length": min(lengths),
             "total_chars": sum(lengths)
         }
+
+class NotionTextProcessor:
+    """專為 Notion 純文字內容語意分段與結構化的處理器"""
+    
+    NOISE_PATTERNS = [
+        r"版權所有", r"Copyright", r"廣告[:：]", r"立即訂閱", r"All rights reserved", r"^\s*$"
+    ]
+
+    def __init__(self):
+        pass
+
+    def parse_notion_content(self, text: str, page_title: str, source_url: str) -> list:
+        """
+        依據語意與結構自動分段，產生 JSON 區塊陣列
+        """
+        if not text:
+            return []
+        lines = text.splitlines()
+        results = []
+        buffer = []
+        section_title = None
+        section_start = 1
+        current_type = None
+        line_num = 1
+        def is_noise(line):
+            for pat in self.NOISE_PATTERNS:
+                if re.search(pat, line):
+                    return True
+            return False
+        def flush():
+            nonlocal buffer, section_title, section_start, current_type
+            if buffer:
+                content = "\n".join(buffer).strip()
+                if not content:
+                    buffer = []
+                    return
+                # 自動產生標題
+                title = section_title or self._auto_title(content, page_title)
+                results.append({
+                    "section_title": title,
+                    "content": content,
+                    "page_title": page_title,
+                    "source_url": source_url,
+                    "start_line": section_start
+                })
+                buffer = []
+                section_title = None
+                current_type = None
+        for idx, line in enumerate(lines):
+            lstr = line.strip()
+            if is_noise(lstr):
+                continue
+            # 標題偵測
+            m = re.match(r"^(#+) (.+)", lstr)
+            if m:
+                flush()
+                section_title = m.group(2).strip()
+                section_start = idx + 1
+                current_type = "heading"
+                continue
+            # FAQ偵測
+            if lstr.startswith("問：") or lstr.startswith("Q:"):
+                flush()
+                section_title = "常見問題"
+                section_start = idx + 1
+                current_type = "faq"
+                buffer.append(lstr)
+                continue
+            if current_type == "faq" and (lstr.startswith("答：") or lstr.startswith("A:")):
+                buffer.append(lstr)
+                continue
+            # 表格偵測
+            if lstr.startswith("|") and lstr.endswith("|"):
+                if current_type != "table":
+                    flush()
+                    section_title = "表格"
+                    section_start = idx + 1
+                    current_type = "table"
+                buffer.append(lstr)
+                continue
+            # 清單偵測
+            if re.match(r"^[-*•]\s+.+", lstr) or re.match(r"^\d+\.\s+.+", lstr):
+                if current_type != "list":
+                    flush()
+                    section_title = "列表"
+                    section_start = idx + 1
+                    current_type = "list"
+                buffer.append(lstr)
+                continue
+            # 空行視為段落結束
+            if lstr == "":
+                flush()
+                continue
+            # 一般段落
+            if current_type in ["faq", "table", "list"]:
+                buffer.append(lstr)
+            else:
+                if not buffer:
+                    section_start = idx + 1
+                buffer.append(lstr)
+                current_type = "paragraph"
+        flush()
+        return results
+
+    def _auto_title(self, content: str, page_title: str) -> str:
+        # 若內容有明顯主題詞，取前10字，否則用頁標題
+        c = content.strip().replace("\n", " ")
+        if len(c) > 10:
+            return c[:10] + ("..." if len(c) > 13 else "")
+        return page_title
+
+    def _extract_title(self, line: str) -> str:
+        # 支援測試用的標題抽取
+        m = re.match(r"^(#+) (.+)", line.strip())
+        if m:
+            return m.group(2).strip()
+        m = re.match(r"^\*\*(.+)\*\*", line.strip())
+        if m:
+            return m.group(1).strip()
+        m = re.match(r"^__([^_]+)__", line.strip())
+        if m:
+            return m.group(1).strip()
+        return line.strip()
+
+    def auto_generate_title(self, content: str, max_length: int = 10) -> str:
+        """依內容自動產生標題（for test）"""
+        c = content.strip().replace("\n", " ")
+        if len(c) > max_length:
+            return c[:max_length] + ("..." if len(c) > max_length + 3 else "")
+        return c or "內容"
+
+    def format_as_json(self, sections: list) -> str:
+        """將分段結果格式化為 JSON 字串（for test）"""
+        import json
+        return json.dumps(sections, ensure_ascii=False, indent=2)
+
+    def _is_faq_start(self, text: str) -> bool:
+        """判斷是否為 FAQ 問題/答案開頭（for test）"""
+        t = text.strip()
+        return (
+            t.startswith("問：") or t.startswith("答：") or
+            t.startswith("Q:") or t.startswith("A:") or
+            t == "常見問題" or t.upper() == "FAQ"
+        )
+
+    def _is_list_item(self, text: str) -> bool:
+        """判斷是否為清單項目（for test）"""
+        t = text.strip()
+        return bool(re.match(r"^([-*•+]|\d+\.|[a-zA-Z]\.)\s+.+", t))
+
+    def _is_table_start(self, line: str, next_lines: list = None) -> bool:
+        """判斷是否為表格起始行（for test）"""
+        l = line.strip()
+        if l.startswith("|") and l.endswith("|"):
+            return True
+        # 支援 markdown 標準表格格式
+        if next_lines and len(next_lines) > 1:
+            if re.match(r"^\|(.+)\|$", next_lines[0].strip()) and re.match(r"^\|([\-\s\|:]+)\|$", next_lines[1].strip()):
+                return True
+        return False
