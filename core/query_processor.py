@@ -114,31 +114,60 @@ class QueryProcessor:
         response = self.openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": """你是一個專業的查詢分析助手。\n請根據查詢的性質，合理分配語義搜尋和關鍵字搜尋的權重：\n- 對於需要理解上下文和語義的查詢，給予較高的語義搜尋權重\n- 對於包含具體關鍵詞的查詢，給予較高的關鍵字搜尋權重\n- 權重總和必須為1"""},
+                {"role": "system", "content": """你是一個專業的查詢分析助手。請返回純 JSON 格式，不要包含任何其他文字或標記。返回格式如下：
+{
+    "query": "原始查詢",
+    "analysis": {
+        "intent": "查詢意圖",
+        "keywords": ["關鍵詞列表"],
+        "entities": {"時間": null, "地點": null, "人物": null},
+        "confidence": 0.8
+    },
+    "search_weights": {
+        "semantic": 0.7,
+        "keyword": 0.3
+    }
+}"""},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3
         )
+        
         # 解析 OpenAI 回應
         try:
             print("=== OpenAI 回傳內容 ===")
-            print(response.choices[0].message.content)
-            analysis_json = json.loads(response.choices[0].message.content)
+            response_content = response.choices[0].message.content.strip()
+            print(response_content)
+            
+            # 處理可能包含的 ```json 標記
+            if response_content.startswith("```json"):
+                response_content = response_content[7:]  # 移除 ```json
+            if response_content.endswith("```"):
+                response_content = response_content[:-3]  # 移除 ```
+                
+            # 移除可能的額外空白
+            response_content = response_content.strip()
+            
+            analysis_json = json.loads(response_content)
             analysis = analysis_json["analysis"]
+            search_weights = analysis_json.get("search_weights", {"semantic": 0.7, "keyword": 0.3})
+            
             print("=== 解析後的 analysis ===")
             print(analysis)
+            
             # 防呆：檢查必要欄位
             required_keys = ["intent", "keywords", "entities", "confidence"]
             for k in required_keys:
                 if k not in analysis:
                     print(f"❌ 缺少欄位: {k}")
                     raise KeyError(k)
+                    
             return {
                 "intent": QueryIntent(analysis["intent"]),
                 "keywords": analysis["keywords"],
                 "entities": analysis["entities"],
                 "confidence": analysis["confidence"],
-                "search_weights": analysis.get("search_weight", {"semantic": 0.7, "keyword": 0.3})
+                "search_weights": search_weights
             }
         except Exception as e:
             print(f"❌ OpenAI 分析結果解析失敗: {e}")

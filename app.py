@@ -2,6 +2,10 @@ import streamlit as st
 import os
 import sys
 from datetime import datetime
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from flask import Flask, request, abort
 
 # 將專案根目錄加入路徑
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -330,6 +334,71 @@ def main():
         
         💡 **提示**: 問題越具體，回答越準確！
         """)
+
+# 載入設定
+settings = Settings()
+
+# 初始化 Flask 應用
+app = Flask(__name__)
+
+# 初始化 Line Bot API 和 Webhook Handler
+line_bot_api = LineBotApi(settings.LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
+
+@app.route("/callback", methods=['POST'])
+def callback():
+    # 獲取 X-Line-Signature header 值
+    signature = request.headers['X-Line-Signature']
+
+    # 獲取請求 body 內容
+    body = request.get_data(as_text=True)
+    app.logger.info("Request body: " + body)
+
+    # 驗證簽名
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        abort(400)
+
+    return 'OK'
+
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
+    try:
+        # 初始化 RAG 系統
+        notion_client = NotionClient(settings.NOTION_TOKEN)
+        text_processor = TextProcessor(settings.CHUNK_SIZE, settings.CHUNK_OVERLAP)
+        embedder = Embedder(settings.EMBEDDING_MODEL)
+        vector_store = VectorStore(
+            settings.VECTOR_DB_PATH, 
+            settings.METADATA_DB_PATH, 
+            settings.EMBEDDING_DIMENSION
+        )
+        
+        # 建立 RAG 引擎
+        rag_engine = RAGEngine(
+            notion_client, text_processor, embedder, vector_store, settings
+        )
+        
+        # 獲取用戶的問題
+        user_question = event.message.text
+        
+        # 呼叫 RAG 問答流程
+        response = rag_engine.query(user_question)
+        
+        # 回傳回應
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=response)
+        )
+        
+    except Exception as e:
+        # 錯誤處理
+        error_msg = f"抱歉，處理您的問題時發生錯誤：{str(e)}"
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=error_msg)
+        )
 
 if __name__ == "__main__":
     main()

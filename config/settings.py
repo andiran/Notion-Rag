@@ -40,6 +40,13 @@ class Settings:
         
         # 更新設定
         self.UPDATE_INTERVAL = int(self._get_setting("UPDATE_INTERVAL") or "3600")  # 秒（1小時）
+        
+        # Line Bot 設定（可選）
+        self.LINE_CHANNEL_SECRET = self._get_setting("LINE_CHANNEL_SECRET")
+        self.LINE_CHANNEL_ACCESS_TOKEN = self._get_setting("LINE_CHANNEL_ACCESS_TOKEN")
+        
+        # 只有在使用 Line Bot 時才檢查必要設定
+        self.LINE_BOT_ENABLED = bool(self.LINE_CHANNEL_SECRET and self.LINE_CHANNEL_ACCESS_TOKEN)
     
     def _process_page_id(self, page_id_input):
         """處理頁面ID（支援URL）"""
