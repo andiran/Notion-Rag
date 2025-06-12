@@ -41,12 +41,32 @@ class Settings:
         # 更新設定
         self.UPDATE_INTERVAL = int(self._get_setting("UPDATE_INTERVAL") or "3600")  # 秒（1小時）
         
-        # Line Bot 設定（可選）
+        # LINE Bot 設定
         self.LINE_CHANNEL_SECRET = self._get_setting("LINE_CHANNEL_SECRET")
         self.LINE_CHANNEL_ACCESS_TOKEN = self._get_setting("LINE_CHANNEL_ACCESS_TOKEN")
         
-        # 只有在使用 Line Bot 時才檢查必要設定
+        # 對話記憶設定
+        self.CONVERSATION_TIMEOUT_MINUTES = int(self._get_setting("CONVERSATION_TIMEOUT_MINUTES") or "30")
+        self.MAX_CONVERSATION_LENGTH = int(self._get_setting("MAX_CONVERSATION_LENGTH") or "20")
+        self.CLEANUP_INTERVAL_MINUTES = int(self._get_setting("CLEANUP_INTERVAL_MINUTES") or "5")
+        self.MAX_CONTEXT_TOKENS = int(self._get_setting("MAX_CONTEXT_TOKENS") or "2000")
+        
+        # Redis 設定（可選，用於分佈式對話記憶）
+        self.REDIS_URL = self._get_setting("REDIS_URL")
+        self.USE_REDIS = self._get_setting("USE_REDIS", "false").lower() == "true"
+        
+        # Flask 伺服器設定
+        self.FLASK_HOST = self._get_setting("FLASK_HOST") or "0.0.0.0"
+        self.FLASK_PORT = int(self._get_setting("FLASK_PORT") or "5000")
+        self.FLASK_DEBUG = self._get_setting("FLASK_DEBUG", "false").lower() == "true"
+        
+        # 檢查 LINE Bot 設定完整性
         self.LINE_BOT_ENABLED = bool(self.LINE_CHANNEL_SECRET and self.LINE_CHANNEL_ACCESS_TOKEN)
+        
+        if self.LINE_BOT_ENABLED:
+            print("✅ LINE Bot 設定已啟用")
+        else:
+            print("⚠️ LINE Bot 設定未完整，將僅啟用基本功能")
     
     def _process_page_id(self, page_id_input):
         """處理頁面ID（支援URL）"""
@@ -101,3 +121,29 @@ class Settings:
                                 return env_value.strip().strip('"').strip("'")
         
         return default
+    
+    def get_conversation_settings(self) -> dict:
+        """獲取對話記憶相關設定"""
+        return {
+            'timeout_minutes': self.CONVERSATION_TIMEOUT_MINUTES,
+            'max_conversation_length': self.MAX_CONVERSATION_LENGTH,
+            'cleanup_interval_minutes': self.CLEANUP_INTERVAL_MINUTES,
+            'max_context_tokens': self.MAX_CONTEXT_TOKENS,
+            'use_redis': self.USE_REDIS,
+            'redis_url': self.REDIS_URL
+        }
+    
+    def validate_line_bot_settings(self) -> bool:
+        """驗證 LINE Bot 設定是否完整"""
+        required_settings = [
+            ('LINE_CHANNEL_ACCESS_TOKEN', self.LINE_CHANNEL_ACCESS_TOKEN),
+            ('LINE_CHANNEL_SECRET', self.LINE_CHANNEL_SECRET)
+        ]
+        
+        missing_settings = [name for name, value in required_settings if not value]
+        
+        if missing_settings:
+            print(f"❌ 缺少必要的 LINE Bot 設定: {', '.join(missing_settings)}")
+            return False
+        
+        return True

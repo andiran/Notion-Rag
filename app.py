@@ -2,9 +2,6 @@ import streamlit as st
 import os
 import sys
 from datetime import datetime
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from flask import Flask, request, abort
 
 # 將專案根目錄加入路徑
@@ -187,7 +184,7 @@ def main():
         # 初始化按鈕
         if st.button("🔄 重新初始化系統", type="secondary"):
             st.cache_resource.clear()
-            st.experimental_rerun()
+            st.rerun()
         
         # 更新Notion內容按鈕
         if st.button("📄 更新Notion內容", type="secondary"):
@@ -267,7 +264,7 @@ def main():
         with col_clear:
             if st.button("🗑️ 清空對話", type="secondary", use_container_width=True):
                 st.session_state.messages = []
-                st.experimental_rerun()
+                st.rerun()
         
         # 處理問題
         if ask_button and question.strip():
@@ -285,7 +282,7 @@ def main():
             
             # 清空輸入並重新載入
             st.session_state.current_question = ""
-            st.experimental_rerun()
+            st.rerun()
     
     with col2:
         st.header("📊 系統狀態")
@@ -338,67 +335,92 @@ def main():
 # 載入設定
 settings = Settings()
 
-# 初始化 Flask 應用
-app = Flask(__name__)
-
-# 初始化 Line Bot API 和 Webhook Handler
-line_bot_api = LineBotApi(settings.LINE_CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
-
-@app.route("/callback", methods=['POST'])
-def callback():
-    # 獲取 X-Line-Signature header 值
-    signature = request.headers['X-Line-Signature']
-
-    # 獲取請求 body 內容
-    body = request.get_data(as_text=True)
-    app.logger.info("Request body: " + body)
-
-    # 驗證簽名
+# 檢查是否有 LINE Bot 設定
+if hasattr(settings, 'LINE_CHANNEL_ACCESS_TOKEN') and settings.LINE_CHANNEL_ACCESS_TOKEN:
     try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        abort(400)
+        # 使用 LINE Bot SDK v3
+        from linebot.v3 import WebhookHandler
+        from linebot.v3.messaging import Configuration, ApiClient, MessagingApi
+        from linebot.v3.webhooks import MessageEvent, TextMessageContent
+        from linebot.v3.messaging.models import TextMessage, ReplyMessageRequest
+        
+        # 初始化 Flask 應用
+        app = Flask(__name__)
+        
+        # 初始化 Line Bot API v3
+        configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
+        api_client = ApiClient(configuration)
+        line_bot_api = MessagingApi(api_client)
+        handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
+        
+        @app.route("/callback", methods=['POST'])
+        def callback():
+            # 獲取 X-Line-Signature header 值
+            signature = request.headers['X-Line-Signature']
 
-    return 'OK'
+            # 獲取請求 body 內容
+            body = request.get_data(as_text=True)
+            app.logger.info("Request body: " + body)
 
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
-    try:
-        # 初始化 RAG 系統
-        notion_client = NotionClient(settings.NOTION_TOKEN)
-        text_processor = TextProcessor(settings.CHUNK_SIZE, settings.CHUNK_OVERLAP)
-        embedder = Embedder(settings.EMBEDDING_MODEL)
-        vector_store = VectorStore(
-            settings.VECTOR_DB_PATH, 
-            settings.METADATA_DB_PATH, 
-            settings.EMBEDDING_DIMENSION
-        )
-        
-        # 建立 RAG 引擎
-        rag_engine = RAGEngine(
-            notion_client, text_processor, embedder, vector_store, settings
-        )
-        
-        # 獲取用戶的問題
-        user_question = event.message.text
-        
-        # 呼叫 RAG 問答流程
-        response = rag_engine.query(user_question)
-        
-        # 回傳回應
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=response)
-        )
-        
-    except Exception as e:
-        # 錯誤處理
-        error_msg = f"抱歉，處理您的問題時發生錯誤：{str(e)}"
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=error_msg)
-        )
+            # 驗證簽名
+            try:
+                handler.handle(body, signature)
+            except Exception as e:
+                abort(400)
+
+            return 'OK'
+
+        @handler.add(MessageEvent, message=TextMessageContent)
+        def handle_message(event):
+            try:
+                # 初始化 RAG 系統
+                notion_client = NotionClient(settings.NOTION_TOKEN)
+                text_processor = TextProcessor(settings.CHUNK_SIZE, settings.CHUNK_OVERLAP)
+                embedder = Embedder(settings.EMBEDDING_MODEL)
+                vector_store = VectorStore(
+                    settings.VECTOR_DB_PATH, 
+                    settings.METADATA_DB_PATH, 
+                    settings.EMBEDDING_DIMENSION
+                )
+                
+                # 建立 RAG 引擎
+                rag_engine = RAGEngine(
+                    notion_client, text_processor, embedder, vector_store, settings
+                )
+                
+                # 獲取用戶的問題
+                user_question = event.message.text
+                
+                # 呼叫 RAG 問答流程
+                response = rag_engine.query(user_question)
+                
+                # 回傳回應
+                reply_message_request = ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response)]
+                )
+                line_bot_api.reply_message(reply_message_request)
+                
+            except Exception as e:
+                # 錯誤處理
+                error_msg = f"抱歉，處理您的問題時發生錯誤：{str(e)}"
+                reply_message_request = ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=error_msg)]
+                )
+                line_bot_api.reply_message(reply_message_request)
+                
+    except ImportError:
+        # 如果沒有安裝 LINE Bot SDK v3，跳過 LINE Bot 功能
+        print("⚠️ LINE Bot SDK v3 未安裝，跳過 LINE Bot 功能")
+        app = None
+        line_bot_api = None
+        handler = None
+else:
+    print("⚠️ 未設定 LINE Bot 憑證，跳過 LINE Bot 功能")
+    app = None
+    line_bot_api = None
+    handler = None
 
 if __name__ == "__main__":
     main()

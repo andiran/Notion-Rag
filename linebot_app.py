@@ -2,6 +2,7 @@ import os
 import sys
 import gc
 import threading
+import atexit
 from flask import Flask, request, abort
 
 # 設定環境變數（必須在導入其他庫之前）
@@ -17,18 +18,25 @@ from core.notion_client import NotionClient
 from core.text_processor import TextProcessor
 from core.embedder import Embedder
 from core.vector_store import VectorStore
-from core.rag_engine import RAGEngine
+from core.enhanced_rag_engine import EnhancedRAGEngine
+from core.conversation_memory import ConversationMemory
+from services.linebot_handler import LineBotHandler
 
 # 使用 Line Bot SDK v3
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage as LineTextMessage
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 # 載入設定
 try:
     settings = Settings()
     print("✅ 設定載入成功")
+    
+    # 驗證 LINE Bot 設定
+    if not settings.validate_line_bot_settings():
+        print("❌ LINE Bot 設定不完整，無法啟動")
+        sys.exit(1)
+        
 except Exception as e:
     print(f"❌ 設定載入失敗: {e}")
     sys.exit(1)
@@ -36,34 +44,26 @@ except Exception as e:
 # 初始化 Flask 應用
 app = Flask(__name__)
 
-# 初始化 Line Bot v3 API
-try:
-    configuration = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
-    api_client = ApiClient(configuration)
-    line_bot_api = MessagingApi(api_client)
-    handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
-    print("✅ Line Bot API 初始化成功")
-except Exception as e:
-    print(f"❌ Line Bot API 初始化失敗: {e}")
-    sys.exit(1)
-
-# 全域 RAG 引擎（避免每次請求都重新初始化）
+# 全域變數
 rag_engine = None
-rag_lock = threading.RLock()  # 使用可重入鎖
+conversation_memory = None
+linebot_handler = None
+rag_lock = threading.RLock()
 
-def initialize_rag_engine():
-    """初始化 RAG 引擎（只初始化一次）"""
-    global rag_engine
+def initialize_system():
+    """初始化整個系統"""
+    global rag_engine, conversation_memory, linebot_handler
     
     with rag_lock:
-        if rag_engine is not None:
-            print("♻️ 使用現有的 RAG 引擎")
-            return rag_engine
+        if rag_engine is not None and conversation_memory is not None and linebot_handler is not None:
+            print("♻️ 使用現有的系統組件")
+            return True
         
         try:
-            print("🤖 正在初始化 RAG 系統...")
+            print("🚀 正在初始化連續對話 RAG 系統...")
             
-            # 建立組件
+            # 1. 建立基礎組件
+            print("📦 初始化基礎組件...")
             notion_client = NotionClient(settings.NOTION_TOKEN)
             text_processor = TextProcessor(settings.CHUNK_SIZE, settings.CHUNK_OVERLAP)
             embedder = Embedder(settings.EMBEDDING_MODEL)
@@ -73,68 +73,96 @@ def initialize_rag_engine():
                 settings.EMBEDDING_DIMENSION
             )
             
-            # 建立 RAG 引擎
-            rag_engine = RAGEngine(
+            # 2. 建立增強版 RAG 引擎
+            print("🧠 初始化增強版 RAG 引擎...")
+            rag_engine = EnhancedRAGEngine(
                 notion_client, text_processor, embedder, vector_store, settings
             )
             
-            # 檢查是否需要處理 Notion 內容
+            # 3. 初始化對話記憶管理器
+            print("💭 初始化對話記憶管理器...")
+            conversation_settings = settings.get_conversation_settings()
+            conversation_memory = ConversationMemory(
+                timeout_minutes=conversation_settings['timeout_minutes'],
+                max_conversation_length=conversation_settings['max_conversation_length'],
+                cleanup_interval_minutes=conversation_settings['cleanup_interval_minutes'],
+                max_context_tokens=conversation_settings['max_context_tokens']
+            )
+            
+            # 4. 初始化 LINE Bot 處理器
+            print("🤖 初始化 LINE Bot 處理器...")
+            linebot_handler = LineBotHandler(
+                rag_engine=rag_engine,
+                conversation_memory=conversation_memory,
+                line_channel_access_token=settings.LINE_CHANNEL_ACCESS_TOKEN
+            )
+            
+            # 5. 檢查是否需要處理 Notion 內容
+            print("📄 檢查 Notion 內容...")
             status = rag_engine.get_system_status()
             if status['vector_database']['total_documents'] == 0:
-                print("📄 首次使用，正在處理 Notion 內容...")
+                print("📚 首次使用，正在處理 Notion 內容...")
                 success = rag_engine.process_notion_page(settings.NOTION_PAGE_ID)
                 if success:
                     print("✅ Notion 內容處理完成！")
                 else:
                     print("❌ Notion 內容處理失敗")
+                    return False
+            else:
+                print(f"📊 已載入 {status['vector_database']['total_documents']} 個文件片段")
             
-            print("🚀 RAG 系統初始化完成！")
+            print("🎉 連續對話 RAG 系統初始化完成！")
             
             # 執行記憶體清理
             gc.collect()
             
-            return rag_engine
+            return True
             
         except Exception as e:
-            print(f"❌ RAG 系統初始化失敗: {e}")
-            return None
+            print(f"❌ 系統初始化失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
-def safe_rag_query(question):
-    """線程安全的 RAG 查詢"""
-    global rag_engine
+def cleanup_system():
+    """清理系統資源"""
+    global conversation_memory
+    print("🧹 正在清理系統資源...")
     
-    with rag_lock:
+    if conversation_memory:
         try:
-            if rag_engine is None:
-                raise Exception("RAG 系統未初始化")
-            
-            print(f"🔍 開始處理問題: {question}")
-            result = rag_engine.query(question)
-            print(f"✅ 查詢完成")
-            return result
-            
+            conversation_memory.shutdown()
+            print("✅ 對話記憶管理器已關閉")
         except Exception as e:
-            print(f"❌ RAG 查詢錯誤: {e}")
-            # 嘗試使用簡化回應
-            if "測試" in question:
-                return "我收到了您的測試訊息！我是基於 Notion 文件的智慧助手，可以幫您回答文件相關的問題。"
-            elif any(keyword in question for keyword in ["檢查", "狀態", "status"]):
-                return "系統運行正常！我已經載入了您的 Notion 文件，準備回答相關問題。"
-            else:
-                return "抱歉，處理這個問題時遇到了技術問題。請嘗試重新表述您的問題，或者問一些更簡單具體的問題。"
+            print(f"❌ 關閉對話記憶管理器時發生錯誤: {e}")
+    
+    print("👋 系統清理完成")
 
-# 啟動時初始化 RAG 系統
-print("🚀 啟動時預先初始化 RAG 系統...")
-rag_engine = initialize_rag_engine()
+# 註冊清理函數
+atexit.register(cleanup_system)
 
-if rag_engine is None:
-    print("❌ 無法初始化 RAG 系統，服務將無法正常運行")
+# 初始化 LINE Bot Webhook Handler
+try:
+    handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
+    print("✅ LINE Bot Webhook Handler 初始化成功")
+except Exception as e:
+    print(f"❌ LINE Bot Webhook Handler 初始化失敗: {e}")
+    sys.exit(1)
+
+# 啟動時初始化系統
+print("🚀 啟動時預先初始化系統...")
+if not initialize_system():
+    print("❌ 無法初始化系統，服務將無法正常運行")
     sys.exit(1)
 
 @app.route("/callback", methods=['POST'])
 def callback():
+    """LINE Bot Webhook 回調端點"""
     # 獲取 X-Line-Signature header 值
-    signature = request.headers['X-Line-Signature']
+    signature = request.headers.get('X-Line-Signature')
+    if not signature:
+        print("❌ 缺少 X-Line-Signature header")
+        abort(400)
 
     # 獲取請求 body 內容
     body = request.get_data(as_text=True)
@@ -144,66 +172,129 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        print("Invalid signature. Please check your channel access token/channel secret.")
+        print("❌ 簽名驗證失敗，請檢查 Channel Secret")
         abort(400)
+    except Exception as e:
+        print(f"❌ 處理 webhook 請求時發生錯誤: {e}")
+        abort(500)
 
     return 'OK'
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    """處理文字訊息事件"""
+    global linebot_handler
+    
     try:
-        # 獲取用戶的問題
-        user_question = event.message.text
-        print(f"📩 收到問題: {user_question}")
+        # 確保系統已初始化
+        if not linebot_handler:
+            print("⚠️ 系統未完全初始化，嘗試重新初始化...")
+            if not initialize_system():
+                raise Exception("系統初始化失敗")
         
-        # 如果是簡單的招呼語，直接回應
-        greetings = ["你好", "hello", "hi", "嗨", "Hello", "Hi"]
-        if user_question.strip() in greetings:
-            response = "您好！我是基於您的 Notion 文件的智慧問答助手。請問您想了解文件中的什麼內容呢？"
-        else:
-            # 使用線程安全的查詢方法
-            response = safe_rag_query(user_question)
+        # 使用 LINE Bot 處理器處理訊息
+        linebot_handler.handle_text_message(event)
         
-        print(f"📤 準備回覆: {response[:50]}...")
-        
-        # 確保回應不會太長（Line 有字數限制）
-        if len(response) > 2000:
-            response = response[:1950] + "...\n\n（回應內容較長，已省略部分內容）"
-        
-        # 使用 v3 API 回傳回應
-        reply_message_request = ReplyMessageRequest(
-            reply_token=event.reply_token,
-            messages=[LineTextMessage(text=response)]
-        )
-        line_bot_api.reply_message(reply_message_request)
-        
-        print("✅ 回覆發送成功")
-        
-        # 強制執行記憶體清理
+        # 執行記憶體清理
         gc.collect()
         
     except Exception as e:
-        print(f"❌ 處理錯誤: {str(e)}")
-        # 錯誤處理
-        error_msg = f"抱歉，處理您的問題時發生錯誤。請稍後再試或嘗試更簡單的問題。"
+        print(f"❌ 處理訊息時發生錯誤: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # 發送錯誤訊息給用戶
         try:
-            reply_message_request = ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[LineTextMessage(text=error_msg)]
-            )
-            line_bot_api.reply_message(reply_message_request)
+            if linebot_handler:
+                error_msg = "抱歉，系統目前遇到技術問題，請稍後再試。"
+                linebot_handler._send_reply(event.reply_token, error_msg)
         except Exception as reply_error:
             print(f"❌ 發送錯誤訊息失敗: {reply_error}")
 
 @app.route("/health", methods=['GET'])
 def health_check():
     """健康檢查端點"""
-    global rag_engine
-    status = "ok" if rag_engine is not None else "error"
-    return {"status": status, "message": f"Line Bot is {'running' if status == 'ok' else 'not ready'}"}
+    try:
+        if not rag_engine or not conversation_memory or not linebot_handler:
+            return {"status": "error", "message": "系統未完全初始化"}, 503
+        
+        # 獲取系統狀態
+        handler_stats = linebot_handler.get_handler_stats()
+        
+        return {
+            "status": "healthy",
+            "timestamp": handler_stats["timestamp"],
+            "conversation_stats": handler_stats.get("conversation_memory", {}),
+            "rag_stats": handler_stats.get("rag_engine", {}),
+            "message": "連續對話 RAG 系統運行正常"
+        }, 200
+        
+    except Exception as e:
+        return {
+            "status": "error", 
+            "message": f"健康檢查失敗: {str(e)}"
+        }, 500
 
-if __name__ == "__main__":
-    print("🤖 啟動 Line Bot 服務...")
-    print("📱 Webhook URL: http://localhost:8080/callback")
-    print("💡 如果需要外部存取，請使用 ngrok: ngrok http 8080")
-    app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)  # 啟用多線程支援 
+@app.route("/stats", methods=['GET'])
+def get_stats():
+    """獲取詳細統計資訊"""
+    try:
+        if not linebot_handler:
+            return {"error": "系統未初始化"}, 503
+        
+        stats = linebot_handler.get_handler_stats()
+        return stats, 200
+        
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+@app.route("/admin/clear_memory", methods=['POST'])
+def clear_all_memory():
+    """管理員功能：清除所有對話記憶"""
+    try:
+        if not conversation_memory:
+            return {"error": "對話記憶管理器未初始化"}, 503
+        
+        # 獲取清理前的統計
+        before_stats = conversation_memory.get_conversation_stats()
+        
+        # 清理所有對話
+        cleared_count = 0
+        user_ids = list(conversation_memory.conversations.keys())
+        for user_id in user_ids:
+            if conversation_memory.clear_conversation(user_id):
+                cleared_count += 1
+        
+        # 強制執行記憶體清理
+        gc.collect()
+        
+        return {
+            "message": f"已清除 {cleared_count} 個對話記憶",
+            "before_stats": before_stats,
+            "after_stats": conversation_memory.get_conversation_stats()
+        }, 200
+        
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+if __name__ == '__main__':
+    print("🚀 啟動連續對話 LINE Bot 服務...")
+    print(f"📡 服務位址: http://{settings.FLASK_HOST}:{settings.FLASK_PORT}")
+    print(f"🔗 Webhook URL: http://{settings.FLASK_HOST}:{settings.FLASK_PORT}/callback")
+    print(f"💚 健康檢查: http://{settings.FLASK_HOST}:{settings.FLASK_PORT}/health")
+    print(f"📊 統計資訊: http://{settings.FLASK_HOST}:{settings.FLASK_PORT}/stats")
+    
+    try:
+        app.run(
+            host=settings.FLASK_HOST,
+            port=settings.FLASK_PORT,
+            debug=settings.FLASK_DEBUG,
+            threaded=True  # 啟用多線程支援
+        )
+    except KeyboardInterrupt:
+        print("\n👋 收到停止信號，正在關閉服務...")
+        cleanup_system()
+    except Exception as e:
+        print(f"❌ 服務啟動失敗: {e}")
+        cleanup_system()
+        sys.exit(1) 

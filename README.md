@@ -4,43 +4,57 @@
 
 ## 🚀 專案簡介
 
-這是一個專為台灣使用者設計的智慧問答工具，能夠將您的 Notion 內容轉換為功能強大的檢索增強生成（RAG）系統。本系統支援多種使用方式，包括網頁版、命令列版以及 LINE Bot，讓您能隨時隨地查詢您的 Notion 文件內容。
+這是一個專為台灣使用者設計的智慧問答工具，能夠將您的 Notion 內容轉換為功能強大的檢索增強生成（RAG）系統。本系統支援多種使用方式，包括網頁版、命令列版以及**具備連續對話記憶功能的 LINE Bot**，讓您能隨時隨地查詢您的 Notion 文件內容，並保持對話的連貫性。
 
 ### ✨ 主要功能
 - 🔄 **即時同步** Notion 頁面內容
 - 🧠 **智慧問答** 基於您的文件內容提供準確回答
-- 🌐 **多介面支援** Streamlit 網頁版、命令列版、LINE Bot 三種使用方式
+- 🌐 **多介面支援** Streamlit 網頁版、命令列版、**連續對話 LINE Bot** 三種使用方式
 - 🇹🇼 **繁體中文最佳化** 完整支援台灣用語和語法
 - 🔍 **混合搜尋引擎** 結合語意理解和關鍵字比對的智慧搜尋
 - 🤖 **OpenAI 整合** 使用 GPT 模型產生高品質自然語言回答
 - 📊 **智慧查詢分析** 自動分析問題類型並最佳化搜尋策略
 - ⚡ **高效能快取** 加速模型載入和回應速度
-- 📱 **LINE Bot 支援** 透過 LINE 進行即時問答（使用最新 SDK v3）
+- 📱 **連續對話 LINE Bot** 透過 LINE 進行具備記憶功能的即時問答（使用最新 SDK v3）
+- 💭 **對話記憶管理** 智慧保存對話上下文，支援時間逾時機制
 - 🔒 **本地化部署** 資料安全，完全在本地運行
+
+### 🆕 連續對話記憶功能特色
+- **🧠 智慧記憶管理**：自動保存對話歷程，支援上下文理解
+- **⏰ 時間逾時機制**：超過設定時間自動清除記憶，最佳化記憶體使用
+- **📝 對話長度控制**：智慧管理對話長度，避免 token 超限
+- **🔄 連貫性對話**：理解「這個」、「那個」等指示詞，保持對話流暢
+- **📊 對話統計功能**：即時查看對話狀態和系統統計
+- **🗑️ 記憶清除指令**：支援手動清除對話記憶，重新開始
 
 ## 📁 專案架構
 
 ```
 Notion-RAG/
 ├── 📂 config/                  # 設定檔案目錄
-│   ├── settings.py            # 系統設定管理
+│   ├── settings.py            # 系統設定管理（新增對話記憶設定）
 │   └── .env                   # 環境變數設定 (需自行建立)
 ├── 📂 core/                    # 核心功能模組
 │   ├── __init__.py
 │   ├── embedder.py            # 文字向量化處理
 │   ├── notion_client.py       # Notion API 客戶端
 │   ├── rag_engine.py          # RAG 引擎核心
+│   ├── enhanced_rag_engine.py # 🆕 增強版 RAG 引擎（支援對話上下文）
+│   ├── conversation_memory.py # 🆕 對話記憶管理器
 │   ├── text_processor.py      # 文字處理工具
 │   ├── vector_store.py        # 向量儲存管理
 │   └── query_processor.py     # 查詢處理與意圖理解
+├── 📂 services/               # 服務層模組
+│   ├── __init__.py
+│   └── linebot_handler.py     # LINE Bot 訊息處理器
 ├── 📂 cache/                   # 模型快取目錄 (自動產生)
 ├── 📂 test/                    # 測試檔案目錄
 ├── 📄 vector_db                # FAISS 向量索引檔案 (自動產生)
 ├── 📄 metadata.db              # SQLite 詮釋資料庫 (自動產生)
 ├── 🌐 app.py                   # Streamlit 網頁應用程式  
-├── 📱 linebot_app.py           # LINE Bot 應用程式 (SDK v3)
+├── 📱 linebot_app.py           # 🆕 LINE Bot 連續對話應用程式 (SDK v3)
 ├── 💻 main.py                  # 命令列主程式
-├── 📋 requirements.txt         # 套件相依清單
+├── 📋 requirements.txt         # 套件相依清單（已更新）
 ├── 🚫 .gitignore              # Git 忽略檔案清單
 └── 📖 README.md               # 專案說明文件
 ```
@@ -87,17 +101,33 @@ Notion-RAG/
 - **權重配置**：根據查詢類型動態調整搜尋權重
 - **中英混用**：完美處理中英文混合查詢
 
-### ⚙️ 系統設定 (config/settings.py)
-- **環境管理**：安全的環境變數處理
-- **彈性設定**：支援多種參數調整
-- **URL 解析**：智慧解析完整 Notion URL
-- **預設配置**：合理的預設值設定
+### 🆕 對話記憶管理器 (core/conversation_memory.py)
+- **智慧記憶機制**：自動管理每個用戶的對話歷程
+- **時間逾時控制**：設定對話逾時時間，避免記憶體佔用過多
+- **上下文長度管理**：智慧控制對話長度，確保 token 數量在合理範圍
+- **線程安全設計**：支援多用戶同時使用
+- **背景清理任務**：定期自動清理過期對話
+- **記憶體最佳化**：有效管理記憶體使用，提升系統效能
+
+### 🆕 增強版 RAG 引擎 (core/enhanced_rag_engine.py)
+- **上下文感知查詢**：接受對話上下文，提供更準確的回答
+- **問題增強處理**：結合上下文理解代詞和指示詞
+- **智慧 Prompt 設計**：根據對話歷程調整 AI 回答策略
+- **多階段檢索**：結合語意搜尋和關鍵字搜尋
+- **品質控制機制**：確保回答品質和相關性
+
+### 🆕 LINE Bot 處理器 (services/linebot_handler.py)
+- **SDK v3 支援**：使用最新的 LINE Bot SDK v3
+- **特殊指令處理**：支援幫助、清除記憶、狀態查詢等指令
+- **錯誤處理機制**：完善的錯誤處理和使用者友善的錯誤訊息
+- **回應格式化**：針對 LINE 平台最佳化的訊息格式
+- **統計功能**：即時顯示對話和系統統計資訊
 
 ## 🛠️ 安裝與設定指南
 
 ### 📋 環境需求
 - **Python 版本**：3.8 或更新版本
-- **記憶體需求**：建議 8GB+ RAM（用於模型載入）
+- **記憶體需求**：建議 8GB+ RAM（用於模型載入和對話記憶）
 - **儲存空間**：至少 2GB 可用磁碟空間
 - **網路環境**：穩定的網際網路連線（用於 API 呼叫）
 - **作業系統**：支援 Windows、macOS、Linux
@@ -126,7 +156,7 @@ venvnotion\Scripts\activate
 
 #### 3. 安裝相依套件
 ```bash
-# 安裝所有必要套件
+# 安裝所有必要套件（包含 LINE Bot SDK v3）
 pip install -r requirements.txt
 
 # 若遇到安裝問題，可分別安裝
@@ -146,8 +176,8 @@ pip install -r requirements.txt --no-cache-dir
 | `openai` | ≥1.3.0 | OpenAI GPT API 整合 |
 | `torch` | ≥2.0.0 | 深度學習框架與 GPU 支援 |
 | `streamlit` | ≥1.28.0 | 網頁介面框架 |
-| `line-bot-sdk` | ≥3.0.0 | LINE Bot SDK v3（最新版本） |
-| `flask` | ≥2.3.0 | LINE Bot Web Server 框架 |
+| `line-bot-sdk` | ≥3.0.0 | 🆕 LINE Bot SDK v3（最新版本，支援連續對話） |
+| `flask` | ≥2.3.0 | 🆕 LINE Bot Web Server 框架 |
 
 ### 🔐 Notion API 設定
 
@@ -220,12 +250,37 @@ OPENAI_MODEL=gpt-3.5-turbo
 USE_OPENAI=true
 
 # ========================================
-# LINE Bot 設定（選用）
+# 🆕 LINE Bot 設定（選用）
 # ========================================
 
-# LINE Bot 設定（若要使用 LINE Bot 功能）
+# LINE Bot 設定（若要使用連續對話 LINE Bot 功能）
 LINE_CHANNEL_SECRET=your_line_channel_secret
 LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
+
+# ========================================
+# 🆕 對話記憶設定（可調整）
+# ========================================
+
+# 對話逾時時間（分鐘）
+CONVERSATION_TIMEOUT_MINUTES=30
+
+# 最大對話長度（訊息數）
+MAX_CONVERSATION_LENGTH=20
+
+# 清理間隔（分鐘）
+CLEANUP_INTERVAL_MINUTES=5
+
+# 最大上下文 token 數
+MAX_CONTEXT_TOKENS=2000
+
+# ========================================
+# 🆕 伺服器設定（可調整）
+# ========================================
+
+# Flask 伺服器設定
+FLASK_HOST=0.0.0.0
+FLASK_PORT=5000
+FLASK_DEBUG=false
 
 # ========================================
 # 進階設定（有預設值，可不填）
@@ -258,11 +313,14 @@ UPDATE_INTERVAL=3600
 # 驗證 Python 環境
 python --version
 
-# 驗證套件安裝
-python -c "import sentence_transformers, faiss, openai, streamlit; print('✅ 所有套件安裝成功')"
+# 驗證套件安裝（包含 LINE Bot SDK）
+python -c "import sentence_transformers, faiss, openai, streamlit, linebot.v3, flask; print('✅ 所有套件安裝成功')"
 
 # 驗證設定檔案
 python -c "from config.settings import Settings; s=Settings(); print('✅ 設定檔案載入成功')"
+
+# 驗證 LINE Bot 設定（如有啟用）
+python -c "from config.settings import Settings; s=Settings(); print(f'LINE Bot 狀態: {\"✅ 已啟用\" if s.LINE_BOT_ENABLED else \"⚠️ 未設定\"}')"
 ```
 
 ## 🚀 使用方式
@@ -308,31 +366,22 @@ python main.py
 - `clear`：清空螢幕顯示
 - `quit` 或 `exit`：優雅退出系統
 
-#### 💫 系統啟動畫面
-```
-============================================================
-🤖 Notion RAG 智慧問答系統 v2.0
-============================================================
-✅ 基於您的 Notion 文件內容，提供智慧問答服務
-✅ 支援繁體中文，使用 OpenAI GPT 進行回答生成
-✅ 系統已完成初始化，準備回答您的問題
-============================================================
-請輸入您的問題，或輸入 'help' 查看使用說明：
-```
+### 📱 🆕 LINE Bot 連續對話版
 
-### 📱 LINE Bot 版
-
-透過 LINE 隨時隨地進行問答：
+透過 LINE 隨時隨地進行**具備記憶功能**的智慧問答：
 
 ```bash
-# 啟動 LINE Bot 服務
+# 啟動 LINE Bot 連續對話服務
 python linebot_app.py
 
-# 指定連接埠（預設 8080）
-python linebot_app.py --port 8081
+# 在背景執行
+nohup python linebot_app.py > linebot.log 2>&1 &
+
+# 檢查服務狀態
+curl http://localhost:5000/health
 ```
 
-#### 🔧 LINE Bot 設定步驟
+#### 🔧 LINE Bot 詳細設定步驟
 
 **1. 建立 LINE Developer Account**
 - 前往 [LINE Developer Console](https://developers.line.biz/console/)
@@ -344,231 +393,200 @@ python linebot_app.py --port 8081
 - 點選「Create」→「Messaging API」
 - 填寫 Channel 資訊：
   - **Channel name**：RAG 智慧問答機器人
-  - **Channel description**：基於 Notion 內容的智慧問答助手
+  - **Channel description**：基於 Notion 內容的智慧問答助手，支援連續對話記憶
   - **Category**：選擇「工具」或相關分類
 
 **3. 取得認證資訊**
 - **Channel Secret**：在 Basic settings 頁面取得
 - **Channel Access Token**：在 Messaging API 頁面點選 Issue 產生
 
-**4. 設定 Webhook（使用 ngrok）**
+**4. 設定 Webhook（推薦使用 ngrok）**
 ```bash
 # 安裝 ngrok（若尚未安裝）
 # macOS: brew install ngrok
 # Windows: 從 https://ngrok.com/download 下載
 
 # 在新的終端視窗啟動 ngrok
-ngrok http 8080
-```
+ngrok http 5000
 
-複製 ngrok 提供的 HTTPS URL（例如：`https://abc123.ngrok-free.app`）
+# 複製 ngrok 提供的 HTTPS URL
+# 例如：https://abc123.ngrok-free.app
+```
 
 **5. 設定 LINE Webhook URL**
 - 回到 LINE Developer Console
-- 進入 Messaging API 頁面
+- 進入你的 Messaging API 頁面
 - 在 Webhook settings 中：
   - **Webhook URL**：`https://abc123.ngrok-free.app/callback`
   - 點選「Verify」驗證連線
   - 開啟「Use webhook」
 
-**6. 關閉自動回覆**
+**6. 關閉自動回覆功能**
 - 在「LINE Official Account features」中
 - 將「Auto-reply messages」設為 Disabled
 - 將「Greeting messages」設為 Disabled（選用）
 
-#### 📱 LINE Bot 使用範例
+#### 🤖 LINE Bot 特殊指令
+
+LINE Bot 支援以下特殊指令：
+
 ```
-使用者：你好
-機器人：您好！我是基於您的 Notion 文件的智慧問答助手。請問您想了解文件中的什麼內容呢？
+🔹 基本指令：
+• 「你好」、「hi」→ 顯示歡迎訊息
+• 「幫助」、「help」→ 顯示使用說明
+• 「清除記憶」→ 清空對話記憶，重新開始
 
-使用者：這份文件的主要內容是什麼？
-機器人：根據您的 Notion 文件內容分析...（基於實際內容的智慧回答）
+🔹 系統查詢：
+• 「狀態」、「status」→ 查看系統運行狀態
+• 「統計」→ 查看個人對話統計
 
-使用者：有沒有關於專案時程的資訊？
-機器人：根據文件中的專案資訊...（相關內容的摘要與分析）
+🔹 管理指令：
+• 傳送任意問題 → 智慧問答（自動記憶上下文）
+```
+
+#### 📱 LINE Bot 連續對話範例
+
+```
+👤 用戶：你好
+🤖 助手：您好！我是基於您的 Notion 文件的智慧問答助手 🤖
+
+我可以幫您：
+📚 回答 Notion 文件相關問題
+💭 記住我們的對話內容  
+🔍 根據上下文理解您的問題
+
+請隨時向我提問！
+
+👤 用戶：這份文件的主要內容是什麼？
+🤖 助手：根據您的 Notion 文件內容分析，主要包含...
+
+👤 用戶：那有關於安裝的部分嗎？
+🤖 助手：關於您剛才詢問的文件，安裝相關的內容如下...
+(✨ 注意：機器人記住了之前的對話，知道「那」指的是前面提到的文件)
+
+👤 用戶：如果遇到錯誤怎麼辦？
+🤖 助手：針對您剛才問的安裝問題，如果遇到錯誤可以...
+(✨ 持續保持對話上下文，理解問題的關聯性)
+
+👤 用戶：清除記憶
+🤖 助手：✅ 已清除對話記憶，我們重新開始吧！
+
+👤 用戶：狀態
+🤖 助手：📊 系統狀態：
+💬 對話統計：
+• 總對話數：5
+• 活躍對話：2
+...
+```
+
+#### 🔧 LINE Bot 進階功能
+
+**系統監控端點：**
+```bash
+# 健康檢查
+curl http://localhost:5000/health
+
+# 系統統計
+curl http://localhost:5000/stats
+
+# 清除所有對話記憶（管理用）
+curl -X POST http://localhost:5000/admin/clear_memory
+```
+
+**背景運行管理：**
+```bash
+# 使用 systemd（推薦用於正式環境）
+sudo nano /etc/systemd/system/notion-rag-linebot.service
+
+# 服務檔案內容：
+[Unit]
+Description=Notion RAG LINE Bot
+After=network.target
+
+[Service]
+Type=simple
+User=yourusername
+WorkingDirectory=/path/to/Notion-Rag
+Environment=PATH=/path/to/Notion-Rag/venvnotion/bin
+ExecStart=/path/to/Notion-Rag/venvnotion/bin/python linebot_app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+# 啟用服務
+sudo systemctl enable notion-rag-linebot
+sudo systemctl start notion-rag-linebot
+sudo systemctl status notion-rag-linebot
 ```
 
 ## 💡 使用範例與應用場景
 
-### 📝 專案管理應用
+### 📝 專案管理應用（支援連續對話）
 **適用場景**：專案文件、會議紀錄、任務追蹤
 
 ```
-❓ 使用者提問：這個專案的主要里程碑有哪些？
+❓ 使用者：這個專案的主要里程碑有哪些？
 🤖 智慧回答：根據您的專案文件，主要里程碑包括：
    1. 需求分析完成（第2週）
    2. 系統設計確認（第5週）  
    3. 原型開發完成（第10週）
-   4. 測試階段開始（第12週）
-   5. 正式上線部署（第16週）
+   ...
 
-❓ 使用者提問：目前專案進度如何？有什麼風險需要注意？
-🤖 智慧回答：根據最新的專案狀態更新...
+❓ 使用者：那目前進度如何？
+🤖 智慧回答：根據剛才提到的專案里程碑，目前進度...
+(✨ 機器人記住了前面討論的里程碑內容)
+
+❓ 使用者：如果第3個里程碑延遲會怎麼樣？
+🤖 智慧回答：關於您提到的原型開發完成這個里程碑，如果延遲可能會影響...
+(✨ 理解「第3個里程碑」指的是前面提到的「原型開發完成」)
 ```
 
-### 🎓 學習筆記管理
+### 🎓 學習筆記管理（連續深入學習）
 **適用場景**：課程筆記、研究資料、知識庫
 
 ```
-❓ 使用者提問：機器學習的監督式學習有哪些演算法？
+❓ 使用者：機器學習的監督式學習有哪些演算法？
 🤖 智慧回答：根據您的學習筆記，監督式學習主要包括：
    • 分類演算法：決策樹、隨機森林、SVM、神經網路
    • 迴歸演算法：線性迴歸、多項式迴歸、嶺回歸
-   • 整體學習：AdaBoost、Gradient Boosting、XGBoost
+   ...
 
-❓ 使用者提問：深度學習和傳統機器學習的差異是什麼？
-🤖 智慧回答：基於您的筆記整理...
+❓ 使用者：其中 SVM 的優缺點是什麼？
+🤖 智慧回答：關於您剛才問到的 SVM（支援向量機），其優缺點如下...
+(✨ 自動理解 SVM 是前面提到的分類演算法之一)
+
+❓ 使用者：那實際應用時該怎麼選擇？
+🤖 智慧回答：在選擇剛才討論的這些監督式學習演算法時，建議...
+(✨ 結合前面的討論內容給出建議)
 ```
 
-### 🏖️ 旅遊行程規劃
-**適用場景**：旅遊計畫、景點資訊、住宿安排
-
-```
-❓ 使用者提問：這次日本行程總共幾天？主要去哪些城市？
-🤖 智慧回答：根據您的旅遊計畫，此次日本之旅為期8天7夜，
-   主要造訪城市包括：
-   • 東京（4天）：淺草、新宿、涉谷、台場
-   • 京都（2天）：清水寺、金閣寺、嵐山
-   • 大阪（2天）：大阪城、道頓堀、環球影城
-
-❓ 使用者提問：住宿安排和預算如何？
-🤖 智慧回答：住宿安排如下...
-```
-
-### 📊 企業知識庫
+### 🏢 企業知識庫（多輪問答）
 **適用場景**：公司政策、作業流程、FAQ
 
 ```
-❓ 使用者提問：員工請假的申請流程是什麼？
+❓ 使用者：員工請假的申請流程是什麼？
 🤖 智慧回答：根據公司政策文件，請假申請流程如下：
    1. 提前3天提出申請（緊急情況除外）
    2. 填寫線上請假表單
-   3. 直屬主管審核批准
-   4. 人資部門備查
-   5. 系統自動更新出勤記錄
+   ...
 
-❓ 使用者提問：遠距工作的相關規定有哪些？
-🤖 智慧回答：遠距工作政策規定...
+❓ 使用者：那緊急情況要怎麼處理？
+🤖 智慧回答：關於您剛才問的請假申請，緊急情況的處理方式...
+(✨ 理解問題與前面請假流程的關聯)
+
+❓ 使用者：如果主管不在怎麼辦？
+🤖 智慧回答：在請假申請流程中，如果直屬主管不在，可以...
+(✨ 保持對話連貫性，知道是在討論請假流程)
 ```
 
-### 🏥 會議記錄查詢
-**適用場景**：會議紀錄、決議事項、行動計畫
+### 🌟 連續對話記憶功能的優勢
 
-```
-❓ 使用者提問：上次董事會會議的主要決議有哪些？
-🤖 智慧回答：根據董事會會議記錄，主要決議包括：
-   • 批准2024年度預算案
-   • 同意新產品線投資計畫
-   • 核准人力資源擴編方案
-   • 確認永續發展策略方向
-
-❓ 使用者提問：有哪些待辦事項需要追蹤？
-🤖 智慧回答：需要追蹤的行動項目包括...
-```
-
-## ⚙️ 進階設定與調優
-
-### 🎛️ 模型選擇與調整
-
-#### 嵌入模型選擇
-```bash
-# 中文最佳化模型（推薦）
-EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-EMBEDDING_DIMENSION=384
-
-# 更高精度模型（需要更多記憶體）
-EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2
-EMBEDDING_DIMENSION=768
-
-# OpenAI 嵌入模型（需要 API 費用）
-EMBEDDING_MODEL=text-embedding-ada-002
-EMBEDDING_DIMENSION=1536
-```
-
-#### OpenAI 模型設定
-```bash
-# 成本效益平衡（推薦）
-OPENAI_MODEL=gpt-3.5-turbo
-
-# 更高品質回答
-OPENAI_MODEL=gpt-4
-
-# 新版模型
-OPENAI_MODEL=gpt-3.5-turbo-1106
-```
-
-### 📏 文字處理最佳化
-
-#### 短文件設定
-```bash
-CHUNK_SIZE=300          # 適合短篇文章、筆記
-CHUNK_OVERLAP=30        # 10% 重疊
-SIMILARITY_THRESHOLD=0.8 # 高精確度
-TOP_K=3                 # 少量但精準的結果
-```
-
-#### 長文件設定
-```bash
-CHUNK_SIZE=800          # 適合長篇文件、報告
-CHUNK_OVERLAP=100       # 12.5% 重疊
-SIMILARITY_THRESHOLD=0.6 # 較寬鬆的門檻
-TOP_K=8                 # 更多相關內容
-```
-
-#### 技術文件設定
-```bash
-CHUNK_SIZE=600          # 平衡內容完整性
-CHUNK_OVERLAP=80        # 保持技術細節連貫
-SIMILARITY_THRESHOLD=0.7 # 中等門檻
-TOP_K=5                 # 標準數量
-```
-
-### 🔍 搜尋策略調整
-
-系統會根據問題類型自動調整搜尋權重：
-
-| 問題類型 | 語意搜尋權重 | 關鍵字搜尋權重 | 適用場景 |
-|---------|-------------|---------------|----------|
-| 概念性問題 | 80% | 20% | 「什麼是...」、「如何理解...」 |
-| 事實性問題 | 70% | 30% | 「誰是...」、「什麼時候...」 |
-| 時間性問題 | 50% | 50% | 「何時...」、「期限...」 |
-| 位置性問題 | 50% | 50% | 「在哪裡...」、「地點...」 |
-
-### 🚀 效能最佳化
-
-#### 記憶體使用最佳化
-```bash
-# 降低批次處理大小
-BATCH_SIZE=8
-
-# 使用 CPU 版本（節省記憶體）
-pip install faiss-cpu
-
-# 清理快取
-export TRANSFORMERS_CACHE=/tmp/transformers_cache
-```
-
-#### 速度最佳化
-```bash
-# 使用較小但高效的模型
-EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-
-# 降低檢索數量
-TOP_K=3
-
-# 提高相似度門檻
-SIMILARITY_THRESHOLD=0.8
-```
-
-#### GPU 加速（選用）
-```bash
-# 安裝 GPU 版本
-pip uninstall faiss-cpu
-pip install faiss-gpu
-
-# 安裝 CUDA 支援的 PyTorch
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
+1. **上下文理解**：理解「這個」、「那個」、「它」等代詞
+2. **對話連貫性**：記住之前討論的主題和細節
+3. **深入問答**：支援多輪深入探討同一主題
+4. **智慧提示**：根據對話歷程提供相關建議
+5. **記憶管理**：自動管理記憶體使用，避免系統負擔
 
 ## 🚨 常見問題與疑難排解
 
@@ -813,12 +831,30 @@ EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2
 1. 網頁版：點選「更新Notion內容」按鈕
 2. 命令列：輸入 'update' 指令
 3. 自動更新：系統根據 UPDATE_INTERVAL 設定自動更新（預設1小時）
+4. 🆕 LINE Bot：傳送「更新」指令（管理員功能）
+```
+
+**❓ 🆕 如何管理 LINE Bot 對話記憶？**
+```bash
+💡 對話記憶管理：
+
+# 檢查對話統計
+curl http://localhost:5000/stats
+
+# 清除所有對話記憶（管理用）
+curl -X POST http://localhost:5000/admin/clear_memory
+
+# 調整對話逾時設定（在 .env 檔案中）
+CONVERSATION_TIMEOUT_MINUTES=60  # 改為60分鐘
+
+# 調整最大對話長度
+MAX_CONVERSATION_LENGTH=30  # 改為30則訊息
 ```
 
 **❓ 如何清理快取和重置系統？**
 ```bash
 💡 完整重置步驟：
-# 停止所有相關程序
+# 停止所有相關程序（包含 LINE Bot）
 pkill -f "streamlit\|python.*app.py\|python.*main.py\|python.*linebot_app.py"
 
 # 刪除資料檔案
@@ -830,21 +866,9 @@ find . -name "*.pyc" -delete
 
 # 重新啟動系統
 python main.py
-```
 
-**❓ 如何備份重要資料？**
-```bash
-💡 備份指令：
-# 建立備份目錄
-mkdir -p backup/$(date +%Y%m%d_%H%M%S)
-
-# 備份重要檔案
-cp -r vector_db/ backup/$(date +%Y%m%d_%H%M%S)/
-cp metadata.db backup/$(date +%Y%m%d_%H%M%S)/
-cp config/.env backup/$(date +%Y%m%d_%H%M%S)/
-
-# 備份完成
-echo "✅ 備份完成至 backup/ 目錄"
+# 🆕 重新啟動 LINE Bot
+python linebot_app.py
 ```
 
 ## 📊 系統監控與狀態檢查
@@ -888,6 +912,18 @@ python main.py
   ✅ 連接測試: 成功
   ✅ 權限檢查: 讀取權限正常
 
+📱 🆕 LINE Bot 狀態:
+  ✅ LINE Bot: 已啟用
+  ✅ Webhook URL: 已設定
+  ✅ SDK 版本: v3.0.0
+  ✅ 對話記憶: 運行中
+
+💭 🆕 對話記憶統計:
+  👥 活躍對話: 3 個
+  💬 總訊息數: 156 則
+  ⏰ 逾時設定: 30 分鐘
+  🧠 記憶體使用: 12.5 MB
+
 💾 系統資源使用:
   💽 磁碟使用: 256 MB
   🧠 記憶體使用: 1.2 GB
@@ -904,19 +940,39 @@ python main.py
 - **⚙️ 系統參數**：即時顯示所有重要參數
 - **🔄 更新控制**：一鍵更新 Notion 內容
 - **📈 效能指標**：查詢回應時間、系統資源使用
+- **📱 🆕 LINE Bot 監控**：即時顯示 LINE Bot 狀態和對話統計
 
-### 📱 LINE Bot 健康檢查
+### 📱 🆕 LINE Bot 健康檢查
 
 ```bash
 # 檢查 LINE Bot 服務狀態
-curl http://localhost:8080/health
+curl http://localhost:5000/health
 
 # 預期回應
 {
   "status": "ok", 
-  "message": "Line Bot is running",
+  "message": "LINE Bot 連續對話服務運行中",
   "rag_status": "initialized",
+  "conversation_memory": "active",
+  "active_conversations": 3,
   "timestamp": "2024-06-09T14:30:25Z"
+}
+
+# 檢查詳細統計
+curl http://localhost:5000/stats
+
+# 預期回應
+{
+  "system_status": {
+    "total_conversations": 15,
+    "active_conversations": 3,
+    "total_messages": 234,
+    "memory_usage_mb": 12.5
+  },
+  "rag_engine": {
+    "total_documents": 1234,
+    "vector_dimension": 384
+  }
 }
 ```
 
@@ -931,7 +987,7 @@ curl http://localhost:8080/health
 
 2. **✅ 套件相依性檢查**
    ```bash
-   python -c "import sentence_transformers, faiss, openai; print('套件正常')"
+   python -c "import sentence_transformers, faiss, openai, linebot.v3, flask; print('套件正常')"
    ```
 
 3. **✅ Notion 連線檢查**
@@ -939,15 +995,34 @@ curl http://localhost:8080/health
    python -c "from core.notion_client import NotionClient; from config.settings import Settings; nc = NotionClient(Settings().NOTION_TOKEN); print('Notion 連線正常')"
    ```
 
-4. **✅ 資料庫檔案檢查**
+4. **✅ 🆕 LINE Bot 設定檢查**
+   ```bash
+   python -c "from config.settings import Settings; s=Settings(); print(f'LINE Bot: {\"✅ 正常\" if s.validate_line_bot_settings() else \"❌ 設定不完整\"}')"
+   ```
+
+5. **✅ 對話記憶功能檢查**
+   ```bash
+   python -c "from core.conversation_memory import ConversationMemory; cm = ConversationMemory(); print('✅ 對話記憶功能正常')"
+   ```
+
+6. **✅ 資料庫檔案檢查**
    ```bash
    ls -la vector_db/ metadata.db
    ```
 
-5. **✅ 權限檢查**
+7. **✅ 權限檢查**
    ```bash
    # 檢查檔案寫入權限
    touch test_write.tmp && rm test_write.tmp && echo "✅ 寫入權限正常"
+   ```
+
+8. **✅ 🆕 網路連接埠檢查**
+   ```bash
+   # 檢查 LINE Bot 連接埠是否被佔用
+   lsof -i :5000
+   
+   # 檢查 ngrok 連線狀態（如果使用）
+   curl -s http://localhost:4040/api/tunnels | python -m json.tool
    ```
 
 ## 🔄 版本更新與維護
@@ -974,14 +1049,17 @@ git pull origin main
 # 檢查過期套件
 pip list --outdated
 
-# 更新所有套件到最新版本
+# 更新所有套件到最新版本（包含 LINE Bot SDK）
 pip install -r requirements.txt --upgrade
 
 # 更新特定套件
-pip install --upgrade openai sentence-transformers streamlit
+pip install --upgrade openai sentence-transformers streamlit line-bot-sdk flask
 
 # 驗證更新後的相容性
 python -c "from config.settings import Settings; print('✅ 更新成功')"
+
+# 🆕 驗證 LINE Bot 功能
+python -c "from services.linebot_handler import LineBotHandler; print('✅ LINE Bot 更新成功')"
 ```
 
 ### 🔧 資料庫升級
@@ -996,8 +1074,14 @@ cp -r vector_db/ metadata.db backup/pre_update_$(date +%Y%m%d)/
 # 刪除舊資料庫
 rm -rf vector_db/ metadata.db
 
+# 🆕 停止 LINE Bot 服務（如果在運行）
+pkill -f "python.*linebot_app.py"
+
 # 重新初始化系統
 python main.py
+
+# 🆕 重新啟動 LINE Bot
+python linebot_app.py &
 ```
 
 ### 📝 更新日誌追蹤
@@ -1007,7 +1091,8 @@ python main.py
 ```bash
 # 建立更新記錄
 echo "$(date): 更新到版本 X.X.X" >> update_log.txt
-echo "變更內容: [描述主要變更]" >> update_log.txt
+echo "變更內容: [新增 LINE Bot 連續對話記憶功能]" >> update_log.txt
+echo "新功能: 對話記憶管理、上下文理解、智慧回應" >> update_log.txt
 echo "---" >> update_log.txt
 ```
 
@@ -1020,64 +1105,28 @@ echo "---" >> update_log.txt
 - **技術問題**：關於安裝、設定、使用方面的疑問
 - **功能建議**：對系統功能的改進建議
 - **錯誤回報**：發現程式錯誤或異常行為
+- **🆕 LINE Bot 問題**：關於連續對話功能的問題
 
 ### 📧 聯絡方式
 
-- **Email**：技術問題和使用諮詢
+- **GitHub Issues**：[https://github.com/andiran/Notion-Rag/issues](https://github.com/andiran/Notion-Rag/issues)
 
 ## 📜 使用聲明
 
-本專案為個人開發的學習專案，主要用於展示 RAG 技術的實際應用。
+本專案為個人開發的學習專案，主要用於展示 RAG 技術和對話 AI 的實際應用。
 
 **使用注意事項：**
 - 本軟體僅供學習和個人使用
 - 使用者需自行承擔使用風險
 - 建議在正式環境使用前進行充分測試
-- API 使用費用（如 OpenAI）由使用者自行承擔
-
-## 🙏 技術致謝
-
-本專案使用了以下優秀的開源技術和服務：
-
-- **OpenAI**：提供強大的 GPT 模型和 API 服務
-- **Notion**：優秀的知識管理平台和開放 API
-- **Sentence Transformers**：高品質的文字嵌入模型庫
-- **Facebook AI Research**：FAISS 高效向量搜尋引擎
-- **Streamlit**：簡潔優雅的 Python 網頁應用框架
-- **LINE**：便利的即時通訊平台和 Messaging API
-
-感謝這些技術讓個人開發者也能輕鬆建立強大的 AI 應用。
+- API 使用費用（如 OpenAI、LINE Bot）由使用者自行承擔
+- **🆕 對話記憶功能**：會在本地記憶體中儲存對話內容，請注意隱私保護
 
 ---
 
-## 🎯 快速開始檢查清單
+**🚀 立即開始使用連續對話 LINE Bot！**
 
-準備開始使用？請確認以下步驟：
-
-- [ ] ✅ Python 3.8+ 已安裝
-- [ ] ✅ 虛擬環境已建立並啟用
-- [ ] ✅ 相依套件已安裝 (`pip install -r requirements.txt`)
-- [ ] ✅ Notion Integration 已建立
-- [ ] ✅ Notion 頁面已連接到 Integration
-- [ ] ✅ `config/.env` 檔案已設定
-- [ ] ✅ 環境設定驗證通過
-- [ ] 🚀 準備啟動系統！
-
-```bash
-# 開始您的智慧問答之旅
-streamlit run app.py
-```
-
----
-
-⭐ **如果這個專案對您有幫助，歡迎分享給朋友！**
-
-📱 **適用場景**：個人知識管理、學習筆記整理、專案文件查詢
-
-💡 **技術學習**：RAG 架構、向量搜尋、自然語言處理應用
-
----
-
-*最後更新：2024年6月*
-
-*本文件使用繁體中文編寫，專為台灣使用者最佳化*
+1. 完成 LINE Bot 設定
+2. 啟動 `python linebot_app.py`
+3. 透過 LINE 與您的 Notion 智慧助手對話
+4. 享受具有記憶功能的連續問答體驗！
