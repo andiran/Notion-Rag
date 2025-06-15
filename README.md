@@ -801,6 +801,426 @@ sudo systemctl start notion-rag-linebot
 sudo systemctl status notion-rag-linebot
 ```
 
+## 🚀 Render 免費層部署指南
+
+### 🌐 為什麼選擇 Render？
+
+Render 是一個現代化的雲端平台，提供：
+- **🆓 免費層方案**：足夠個人使用的免費額度
+- **🔧 簡單部署**：GitHub 直接部署，自動化 CI/CD
+- **📈 自動擴展**：根據需求自動調整資源
+- **🔒 HTTPS 支援**：內建 SSL 憑證和安全連線
+- **📊 監控面板**：即時查看應用狀態和效能
+
+### 📋 Render 免費層限制
+
+在開始部署前，請了解 Render 免費層的限制：
+
+| 項目 | 限制 | 影響 |
+|------|------|------|
+| **RAM** | 512 MB | 使用記憶體儲存，最佳化模型載入 |
+| **CPU** | 0.1 vCPU | 降低批次處理大小，使用 CPU 最佳化 |
+| **儲存** | 短暫儲存 | 每次重啟清空，使用記憶體資料庫 |
+| **休眠** | 30分鐘無請求休眠 | 首次喚醒需要 30-60 秒 |
+| **時數限制** | 每月 750 小時 | 足夠全天候運行 |
+
+### 🔧 部署前準備
+
+#### 1. 環境變數設定
+
+在 Render 部署前，您需要準備以下環境變數：
+
+**必要設定：**
+```bash
+# Notion 設定
+NOTION_TOKEN=secret_xxxxxxxxx
+NOTION_PAGE_ID=your_notion_page_id
+
+# LINE Bot 設定
+LINE_CHANNEL_SECRET=your_line_channel_secret
+LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
+
+# Render 最佳化設定
+RENDER_DEPLOYMENT=true
+USE_MEMORY_STORAGE=true
+MEMORY_LIMIT=450
+BATCH_SIZE=4
+```
+
+**可選設定：**
+```bash
+# OpenAI 設定（推薦）
+OPENAI_API_KEY=sk-xxxxxxxxx
+USE_OPENAI=true
+OPENAI_MODEL=gpt-3.5-turbo
+
+# 伺服器設定（Render 預設）
+FLASK_HOST=0.0.0.0
+FLASK_PORT=10000
+FLASK_DEBUG=false
+```
+
+#### 2. 部署前檢查
+
+執行部署檢查腳本：
+
+```bash
+# 檢查系統相容性
+python deploy/scripts/deploy_check.py
+
+# 預期輸出：
+🚀 開始 Render 部署前檢查...
+✅ Python 版本: 3.9.x
+✅ 所有必要套件已安裝
+✅ 所有必要環境變數已設定
+✅ 記憶體需求滿足
+✅ 專案檔案結構完整
+✅ Render 設定最佳化
+🎉 系統已準備好部署到 Render！
+```
+
+### 🔨 Render 部署步驟
+
+#### 方法一：使用 render.yaml（推薦）
+
+**步驟 1：準備代碼倉庫**
+```bash
+# 確保所有檔案已提交
+git add .
+git commit -m "準備 Render 部署"
+git push origin main
+```
+
+**步驟 2：連接 Render**
+1. 前往 [Render Dashboard](https://dashboard.render.com/)
+2. 點選「New」→「Web Service」
+3. 連接您的 GitHub 倉庫
+4. 選擇 `Notion-Rag` 倉庫
+
+**步驟 3：Render 會自動檢測設定**
+Render 會自動讀取根目錄的 `render.yaml` 檔案並套用設定：
+- **Build Command**：`pip install -r requirements.txt`
+- **Start Command**：`python linebot_app.py`
+- **Environment**：Python 3.9
+- **Plan**：Free
+
+**步驟 4：設定環境變數**
+在 Render Dashboard 中：
+1. 進入您的服務設定頁面
+2. 點選「Environment」標籤
+3. 添加必要的環境變數（見上方清單）
+4. 點選「Save Changes」
+
+**步驟 5：部署**
+1. Render 會自動開始建置
+2. 建置完成後，會提供公開 URL
+3. 記錄此 URL，格式如：`https://your-app-name.onrender.com`
+
+#### 方法二：手動設定
+
+如果沒有使用 `render.yaml`，可以手動設定：
+
+1. **Runtime**：Docker 或 Python 3.9
+2. **Build Command**：
+   ```bash
+   pip install --upgrade pip && pip install -r requirements.txt
+   ```
+3. **Start Command**：
+   ```bash
+   python linebot_app.py
+   ```
+4. **Health Check Path**：`/health`
+
+### 🔗 LINE Bot Webhook 設定
+
+部署成功後，需要更新 LINE Bot 的 Webhook URL：
+
+1. **取得 Render 提供的 URL**
+   ```
+   https://your-app-name.onrender.com
+   ```
+
+2. **更新 LINE Developer Console**
+   - 前往 [LINE Developer Console](https://developers.line.biz/console/)
+   - 選擇您的 Messaging API channel
+   - 在 Webhook settings 中更新：
+     ```
+     Webhook URL: https://your-app-name.onrender.com/callback
+     ```
+   - 點選「Update」並「Verify」
+
+3. **測試連線**
+   ```bash
+   # 測試健康檢查
+   curl https://your-app-name.onrender.com/health
+   
+   # 預期回應
+   {
+     "status": "healthy",
+     "message": "連續對話 RAG 系統運行正常"
+   }
+   ```
+
+### 📊 記憶體使用最佳化
+
+Render 免費層的 512MB 記憶體限制需要特別最佳化：
+
+#### 1. 自動記憶體管理
+
+系統已內建以下最佳化機制：
+
+- **小批次處理**：批次大小降至 4（預設 16）
+- **模型最佳化**：強制使用 CPU 模式
+- **積極垃圾回收**：處理每個請求後執行清理
+- **記憶體監控**：自動監控並警告記憶體使用
+
+#### 2. 手動記憶體監控
+
+```bash
+# 遠端檢查記憶體使用
+curl https://your-app-name.onrender.com/stats
+
+# 回應包含記憶體統計
+{
+  "memory_usage": {
+    "current_mb": 380,
+    "limit_mb": 450,
+    "usage_percent": 84.4
+  }
+}
+```
+
+#### 3. 記憶體警告處理
+
+當記憶體使用超過 80% 時：
+- 系統會自動執行垃圾回收
+- LINE Bot 會記錄警告訊息
+- 可透過 `/admin/clear_memory` 端點清理對話記憶
+
+### ⚡ 效能最佳化技巧
+
+#### 1. 冷啟動最佳化
+
+Render 免費層服務會在 30 分鐘無請求後休眠：
+
+**使用 Uptime 監控服務**（免費）：
+- [UptimeRobot](https://uptimerobot.com/)
+- [StatusCake](https://www.statuscake.com/)
+- 設定每 25 分鐘 ping 一次健康檢查端點
+
+**設定範例**：
+```
+監控 URL: https://your-app-name.onrender.com/health
+檢查間隔: 25 分鐘
+監控關鍵字: "healthy"
+```
+
+#### 2. 快取策略
+
+```bash
+# Render 環境變數最佳化
+TRANSFORMERS_CACHE=/tmp/transformers_cache
+TORCH_HOME=/tmp/torch_cache
+```
+
+#### 3. 請求最佳化
+
+```python
+# 系統會自動根據 Render 環境調整：
+- 降低文字分塊大小（500 → 400）
+- 減少檢索數量（避免過載）
+- 使用記憶體向量資料庫（避免磁碟 I/O）
+```
+
+### 🔍 監控與除錯
+
+#### 1. Render Dashboard 監控
+
+在 Render Dashboard 中可以查看：
+- **服務狀態**：運行/建置/錯誤
+- **資源使用**：CPU、記憶體使用率
+- **日誌輸出**：即時查看應用程式日誌
+- **部署歷史**：查看過往部署記錄
+
+#### 2. 應用程式日誌
+
+```bash
+# 查看即時日誌
+# 在 Render Dashboard → Your Service → Logs
+
+# 常見成功日誌：
+🌐 檢測到 Render 環境，啟用記憶體最佳化...
+✅ 設定載入成功
+💾 使用記憶體儲存模式 (適用於 Render)
+🧠 智慧記憶管理：自動保存對話歷程
+✅ 連續對話 RAG 系統初始化完成！
+🚀 啟動連續對話 LINE Bot 服務...
+```
+
+#### 3. 健康檢查端點
+
+```bash
+# 基本健康檢查
+GET https://your-app-name.onrender.com/health
+
+# 詳細系統統計
+GET https://your-app-name.onrender.com/stats
+
+# 管理功能（清理記憶體）
+POST https://your-app-name.onrender.com/admin/clear_memory
+```
+
+### 🚨 常見問題與解決方案
+
+#### ❗ 問題：建置失敗
+
+**可能原因**：
+- 依賴套件安裝失敗
+- Python 版本不相容
+- 記憶體不足
+
+**解決方案**：
+```bash
+# 檢查 requirements.txt
+# 確保版本範圍正確
+torch>=2.0.0,<2.1.0  # 限制版本避免過大套件
+
+# 檢查 Python 版本
+runtime.txt 內容：python-3.9.19
+
+# 或使用 Dockerfile 部署（位於 deploy/Dockerfile）
+```
+
+#### ❗ 問題：記憶體不足
+
+**症狀**：
+- 服務頻繁重啟
+- 請求逾時
+- OOM (Out of Memory) 錯誤
+
+**解決方案**：
+```bash
+# 調整環境變數
+MEMORY_LIMIT=400  # 降低記憶體限制
+BATCH_SIZE=2      # 進一步降低批次大小
+
+# 手動清理記憶體
+curl -X POST https://your-app-name.onrender.com/admin/clear_memory
+```
+
+#### ❗ 問題：冷啟動時間過長
+
+**症狀**：
+- LINE Bot 首次回應超過 30 秒
+- 健康檢查逾時
+
+**解決方案**：
+1. 設定 uptime 監控防止休眠
+2. 使用較小的模型
+3. 預熱請求：定期發送測試訊息
+
+#### ❗ 問題：LINE Bot 無法接收訊息
+
+**檢查清單**：
+```bash
+# 1. 檢查服務狀態
+curl https://your-app-name.onrender.com/health
+
+# 2. 檢查 Webhook URL 設定
+https://your-app-name.onrender.com/callback
+
+# 3. 檢查環境變數
+LINE_CHANNEL_SECRET=***
+LINE_CHANNEL_ACCESS_TOKEN=***
+
+# 4. 檢查 LINE Developer Console
+- Webhook URL 已更新
+- Webhook 已啟用
+- 自動回覆已關閉
+```
+
+### 💰 成本控制
+
+#### Render 免費層限制
+
+- **每月 750 小時**：足夠 24/7 運行
+- **無信用卡要求**：完全免費使用
+- **無自動升級**：不會意外產生費用
+
+#### 相關服務費用
+
+- **LINE Bot**：基本功能免費，進階功能另計
+- **OpenAI API**：按使用量計費，建議設定預算限制
+- **Notion API**：目前免費
+
+### 📈 擴展選項
+
+當免費層不敷使用時：
+
+#### Render 付費方案
+
+- **Starter Plan**：$7/月，1GB RAM，專用 CPU
+- **Standard Plan**：$25/月，4GB RAM，更好效能
+- **Pro Plan**：$85/月，8GB RAM，自動擴展
+
+#### 其他雲端平台
+
+- **Heroku**：類似的 PaaS 平台
+- **Railway**：開發者友善的部署平台  
+- **Vercel**：適合前端和 API
+- **DigitalOcean App Platform**：容器化部署
+
+### 🔧 生產環境建議
+
+#### 資料持久化
+
+```bash
+# 升級到付費方案後可使用
+# PostgreSQL 資料庫
+DATABASE_URL=postgresql://...
+
+# Redis 快取
+REDIS_URL=redis://...
+
+# 檔案儲存
+AWS_S3_BUCKET=your-bucket
+```
+
+#### 安全性增強
+
+```bash
+# API 金鑰輪換
+WEBHOOK_SIGNATURE_VALIDATION=true
+
+# 訪問限制
+ALLOWED_ORIGINS=https://your-domain.com
+
+# 監控和警報
+SENTRY_DSN=your-sentry-dsn
+```
+
+#### 效能監控
+
+```bash
+# APM 工具
+NEW_RELIC_LICENSE_KEY=your-key
+
+# 日誌聚合
+LOGTAIL_TOKEN=your-token
+```
+
+---
+
+**🎉 恭喜！現在您的 Notion RAG LINE Bot 已成功部署在 Render 上！**
+
+透過 LINE 與您的智慧助手開始對話，享受：
+- ☁️ **雲端運行**：24/7 不間斷服務
+- 💭 **記憶功能**：連續對話體驗
+- 🚀 **自動重啟**：服務穩定可靠
+- 📱 **隨時訪問**：手機即可使用
+
+**下一步**：設定 uptime 監控，確保服務不休眠！
+
 ## 💡 使用範例與應用場景
 
 ### 📝 專案管理應用（支援連續對話）

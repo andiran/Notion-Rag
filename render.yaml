@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: notion-rag-linebot
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.9.19"
+      - key: RENDER_DEPLOYMENT
+        value: "true"
+      - key: MEMORY_LIMIT
+        value: "450"
+      - key: USE_MEMORY_STORAGE
+        value: "true"
+      - key: BATCH_SIZE
+        value: "4"
+      - key: FLASK_HOST
+        value: "0.0.0.0"
+      - key: FLASK_PORT
+        value: "10000"
+      - key: FLASK_DEBUG
+        value: "false"
+      - key: TOKENIZERS_PARALLELISM
+        value: "false"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1" 

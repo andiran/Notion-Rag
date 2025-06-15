@@ -15,19 +15,35 @@ class VectorStore:
         self.metadata_db_path = metadata_db_path
         self.dimension = dimension
         
+        # 檢測 Render 環境
+        import os
+        self.is_render_deployment = os.getenv("RENDER_DEPLOYMENT", "false").lower() == "true"
+        self.use_memory_storage = os.getenv("USE_MEMORY_STORAGE", "false").lower() == "true"
+        
         print(f"🗄️ 初始化向量資料庫...")
         print(f"  向量資料庫路徑: {vector_db_path}")
         print(f"  元資料庫路徑: {metadata_db_path}")
         print(f"  向量維度: {dimension}")
         
-        # 初始化FAISS索引
-        self.index = faiss.IndexFlatIP(dimension)  # 使用內積相似度
+        if self.is_render_deployment:
+            print("🌐 Render 環境檢測到，使用記憶體最佳化設定")
+        
+        # 初始化FAISS索引 (Render 環境使用更節省記憶體的索引)
+        if self.is_render_deployment and self.use_memory_storage:
+            # 使用更節省記憶體的索引類型
+            self.index = faiss.IndexFlatIP(dimension)
+            print("💾 使用記憶體最佳化 FAISS 索引")
+        else:
+            self.index = faiss.IndexFlatIP(dimension)  # 使用內積相似度
         
         # 初始化SQLite元資料庫
         self._init_metadata_db()
         
-        # 載入現有資料
-        self._load_existing_data()
+        # 載入現有資料 (只在非記憶體模式下)
+        if not (self.is_render_deployment and self.use_memory_storage):
+            self._load_existing_data()
+        else:
+            print("💾 記憶體儲存模式：跳過載入現有資料")
         
         print(f"✅ 向量資料庫初始化完成")
         print(f"  當前向量數量: {self.index.ntotal}")
@@ -318,17 +334,31 @@ class VectorStore:
         }
     
     def _save_faiss_index(self):
-        """儲存FAISS索引"""
+        """儲存FAISS索引 (Render 環境跳過檔案儲存)"""
+        # Render 環境使用記憶體儲存，跳過檔案保存
+        if self.is_render_deployment and self.use_memory_storage:
+            print("💾 記憶體儲存模式：跳過 FAISS 索引檔案保存")
+            return
+            
         # 如果是 :memory: 路徑，跳過儲存
         if self.vector_db_path == ":memory:":
             return
         
-        os.makedirs(os.path.dirname(self.vector_db_path), exist_ok=True)
-        faiss.write_index(self.index, self.vector_db_path)
+        try:
+            os.makedirs(os.path.dirname(self.vector_db_path), exist_ok=True)
+            faiss.write_index(self.index, self.vector_db_path)
+            print(f"✅ FAISS索引已儲存: {self.vector_db_path}")
+        except Exception as e:
+            print(f"❌ 儲存FAISS索引失敗: {e}")
     
     def _load_existing_data(self):
-        """載入現有資料"""
-        if os.path.exists(self.vector_db_path):
+        """載入現有資料 (Render 環境跳過)"""
+        # Render 環境使用記憶體儲存，跳過檔案載入
+        if self.is_render_deployment and self.use_memory_storage:
+            print("💾 記憶體儲存模式：跳過現有資料載入")
+            return
+            
+        if self.vector_db_path != ":memory:" and os.path.exists(self.vector_db_path):
             try:
                 self.index = faiss.read_index(self.vector_db_path)
                 print(f"✅ 載入現有向量索引，包含 {self.index.ntotal} 個向量")

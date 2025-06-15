@@ -5,6 +5,14 @@ class Settings:
     """系統設定管理"""
     
     def __init__(self):
+        # 檢測 Render 雲端環境
+        self.IS_RENDER_DEPLOYMENT = self._get_setting("RENDER_DEPLOYMENT", "false").lower() == "true"
+        self.USE_MEMORY_STORAGE = self._get_setting("USE_MEMORY_STORAGE", "false").lower() == "true"
+        self.MEMORY_LIMIT_MB = int(self._get_setting("MEMORY_LIMIT", "450"))
+        
+        if self.IS_RENDER_DEPLOYMENT:
+            print("🌐 檢測到 Render 雲端環境，啟用最佳化設定")
+        
         # 從環境變數或設定檔讀取Notion設定
         self.NOTION_TOKEN = self._get_setting("NOTION_TOKEN")
         raw_page_id = self._get_setting("NOTION_PAGE_ID")
@@ -16,13 +24,24 @@ class Settings:
         if not self.NOTION_PAGE_ID:
             raise ValueError("請設定 NOTION_PAGE_ID 環境變數或在 config/.env 檔案中設定（可使用完整URL）")
         
-        # 向量嵌入設定
-        self.EMBEDDING_MODEL = self._get_setting("EMBEDDING_MODEL") or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+        # 向量嵌入設定 (Render 環境優化)
+        if self.IS_RENDER_DEPLOYMENT:
+            # 使用更小的模型以節省記憶體
+            self.EMBEDDING_MODEL = self._get_setting("EMBEDDING_MODEL") or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+            self.BATCH_SIZE = int(self._get_setting("BATCH_SIZE") or "4")  # 降低批次大小
+        else:
+            self.EMBEDDING_MODEL = self._get_setting("EMBEDDING_MODEL") or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+            self.BATCH_SIZE = int(self._get_setting("BATCH_SIZE") or "16")
+            
         self.EMBEDDING_DIMENSION = int(self._get_setting("EMBEDDING_DIMENSION") or "384")
         
-        # 文本分割設定
-        self.CHUNK_SIZE = int(self._get_setting("CHUNK_SIZE") or "500")
-        self.CHUNK_OVERLAP = int(self._get_setting("CHUNK_OVERLAP") or "50")
+        # 文本分割設定 (Render 環境優化)
+        if self.IS_RENDER_DEPLOYMENT:
+            self.CHUNK_SIZE = int(self._get_setting("CHUNK_SIZE") or "400")  # 稍微減少
+            self.CHUNK_OVERLAP = int(self._get_setting("CHUNK_OVERLAP") or "40")
+        else:
+            self.CHUNK_SIZE = int(self._get_setting("CHUNK_SIZE") or "500")
+            self.CHUNK_OVERLAP = int(self._get_setting("CHUNK_OVERLAP") or "50")
         
         # 檢索設定
         self.TOP_K = int(self._get_setting("TOP_K") or "5")
@@ -33,10 +52,17 @@ class Settings:
         self.OPENAI_API_KEY = self._get_setting("OPENAI_API_KEY")
         self.OPENAI_MODEL = self._get_setting("OPENAI_MODEL") or "gpt-3.5-turbo"
         
-        # 資料庫路徑
-        self.VECTOR_DB_PATH = self._get_setting("VECTOR_DB_PATH") or "./vector_db"
-        self.METADATA_DB_PATH = self._get_setting("METADATA_DB_PATH") or "./metadata.db"
-        self.CACHE_PATH = self._get_setting("CACHE_PATH") or "./cache"
+        # 資料庫路徑 (Render 環境使用記憶體儲存)
+        if self.IS_RENDER_DEPLOYMENT and self.USE_MEMORY_STORAGE:
+            # 使用記憶體資料庫
+            self.VECTOR_DB_PATH = ":memory:"
+            self.METADATA_DB_PATH = ":memory:"
+            self.CACHE_PATH = "/tmp/cache"  # 使用臨時目錄
+            print("💾 使用記憶體儲存模式 (適用於 Render)")
+        else:
+            self.VECTOR_DB_PATH = self._get_setting("VECTOR_DB_PATH") or "./vector_db"
+            self.METADATA_DB_PATH = self._get_setting("METADATA_DB_PATH") or "./metadata.db"
+            self.CACHE_PATH = self._get_setting("CACHE_PATH") or "./cache"
         
         # 更新設定
         self.UPDATE_INTERVAL = int(self._get_setting("UPDATE_INTERVAL") or "3600")  # 秒（1小時）
@@ -55,10 +81,15 @@ class Settings:
         self.REDIS_URL = self._get_setting("REDIS_URL")
         self.USE_REDIS = self._get_setting("USE_REDIS", "false").lower() == "true"
         
-        # Flask 伺服器設定
-        self.FLASK_HOST = self._get_setting("FLASK_HOST") or "0.0.0.0"
-        self.FLASK_PORT = int(self._get_setting("FLASK_PORT") or "5000")
-        self.FLASK_DEBUG = self._get_setting("FLASK_DEBUG", "false").lower() == "true"
+        # Flask 伺服器設定 (Render 環境優化)
+        if self.IS_RENDER_DEPLOYMENT:
+            self.FLASK_HOST = self._get_setting("FLASK_HOST") or "0.0.0.0"
+            self.FLASK_PORT = int(self._get_setting("FLASK_PORT") or "10000")  # Render 預設端口
+            self.FLASK_DEBUG = False  # 生產環境關閉 debug
+        else:
+            self.FLASK_HOST = self._get_setting("FLASK_HOST") or "0.0.0.0"
+            self.FLASK_PORT = int(self._get_setting("FLASK_PORT") or "5000")
+            self.FLASK_DEBUG = self._get_setting("FLASK_DEBUG", "false").lower() == "true"
         
         # 檢查 LINE Bot 設定完整性
         self.LINE_BOT_ENABLED = bool(self.LINE_CHANNEL_SECRET and self.LINE_CHANNEL_ACCESS_TOKEN)

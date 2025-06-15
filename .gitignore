@@ -6,6 +6,8 @@
 # ====================
 # API憑證和設定
 .env
+.env.local
+.env.production
 *.token
 *.key
 config/.env
@@ -50,6 +52,7 @@ __pycache__/
 *.so
 .venv/
 venv*/
+venvnotion/
 *.egg-info/
 dist/
 build/
@@ -133,6 +136,17 @@ coverage.xml
 .hypothesis/
 
 # ====================
+# 臨時檔案和備份
+# ====================
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+*.swp
+*.swo
+
+# ====================
 # 重要檔案保留
 # ====================
 !README.md
@@ -143,3 +157,4 @@ coverage.xml
 !CONTRIBUTING.md
 !docs/
 !examples/
+!deploy/

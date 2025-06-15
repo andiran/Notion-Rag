@@ -10,6 +10,13 @@ os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 
+# Render 環境檢測和最佳化
+IS_RENDER_DEPLOYMENT = os.getenv("RENDER_DEPLOYMENT", "false").lower() == "true"
+if IS_RENDER_DEPLOYMENT:
+    print("🌐 檢測到 Render 環境，啟用記憶體最佳化...")
+    # 創建必要的臨時目錄
+    os.makedirs("/tmp/cache", exist_ok=True)
+
 # 將專案根目錄加入路徑
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -66,7 +73,7 @@ def initialize_system():
             print("📦 初始化基礎組件...")
             notion_client = NotionClient(settings.NOTION_TOKEN)
             text_processor = TextProcessor(settings.CHUNK_SIZE, settings.CHUNK_OVERLAP)
-            embedder = Embedder(settings.EMBEDDING_MODEL)
+            embedder = Embedder(settings.EMBEDDING_MODEL, settings.BATCH_SIZE)
             vector_store = VectorStore(
                 settings.VECTOR_DB_PATH, 
                 settings.METADATA_DB_PATH, 
@@ -115,6 +122,17 @@ def initialize_system():
             
             # 執行記憶體清理
             gc.collect()
+            
+            # Render 環境啟動記憶體監控
+            if IS_RENDER_DEPLOYMENT:
+                try:
+                    from scripts.memory_monitor import MemoryMonitor
+                    memory_limit = int(os.getenv('MEMORY_LIMIT', '450'))
+                    monitor = MemoryMonitor(memory_limit_mb=memory_limit)
+                    monitor.start_monitoring()
+                    print("🔍 Render 記憶體監控已啟動")
+                except Exception as e:
+                    print(f"⚠️ 記憶體監控啟動失敗: {e}")
             
             return True
             
@@ -195,8 +213,13 @@ def handle_message(event):
         # 使用 LINE Bot 處理器處理訊息
         linebot_handler.handle_text_message(event)
         
-        # 執行記憶體清理
-        gc.collect()
+        # 執行記憶體清理 (Render 環境更積極清理)
+        if IS_RENDER_DEPLOYMENT:
+            # 積極的記憶體清理
+            for _ in range(2):
+                gc.collect()
+        else:
+            gc.collect()
         
     except Exception as e:
         print(f"❌ 處理訊息時發生錯誤: {e}")
