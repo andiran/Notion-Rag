@@ -5,17 +5,32 @@ import threading
 import atexit
 from flask import Flask, request, abort
 
-# 設定環境變數（必須在導入其他庫之前）
+# =====================================
+# Render 部署記憶體最佳化設定
+# =====================================
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['HF_HOME'] = '/tmp/hf_cache'
+os.environ['TORCH_HOME'] = '/tmp/torch_cache'
+
+def cleanup_memory():
+    """定期清理記憶體"""
+    gc.collect()
+    print("🧹 記憶體清理完成")
+
+def is_render_environment():
+    """檢查是否在 Render 環境中"""
+    return os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_ID')
 
 # Render 環境檢測和最佳化
-IS_RENDER_DEPLOYMENT = os.getenv("RENDER_DEPLOYMENT", "false").lower() == "true"
+IS_RENDER_DEPLOYMENT = os.getenv("RENDER_DEPLOYMENT", "false").lower() == "true" or is_render_environment()
 if IS_RENDER_DEPLOYMENT:
     print("🌐 檢測到 Render 環境，啟用記憶體最佳化...")
     # 創建必要的臨時目錄
     os.makedirs("/tmp/cache", exist_ok=True)
+    os.makedirs("/tmp/hf_cache", exist_ok=True)
+    os.makedirs("/tmp/torch_cache", exist_ok=True)
 
 # 將專案根目錄加入路徑
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -58,7 +73,7 @@ linebot_handler = None
 rag_lock = threading.RLock()
 
 def initialize_system():
-    """初始化整個系統"""
+    """初始化整個系統（Render 最佳化版本）"""
     global rag_engine, conversation_memory, linebot_handler
     
     with rag_lock:
@@ -69,14 +84,31 @@ def initialize_system():
         try:
             print("🚀 正在初始化連續對話 RAG 系統...")
             
-            # 1. 建立基礎組件
+            # Render 環境記憶體最佳化
+            if IS_RENDER_DEPLOYMENT:
+                print("🌐 檢測到 Render 環境，啟用記憶體最佳化模式")
+                # 強制垃圾回收
+                cleanup_memory()
+            
+            # 1. 建立基礎組件（記憶體最佳化）
             print("📦 初始化基礎組件...")
             notion_client = NotionClient(settings.NOTION_TOKEN)
             text_processor = TextProcessor(settings.CHUNK_SIZE, settings.CHUNK_OVERLAP)
-            embedder = Embedder(settings.EMBEDDING_MODEL, settings.BATCH_SIZE)
+            
+            # 使用輕量級模型
+            embedding_model = settings.EMBEDDING_MODEL
+            if IS_RENDER_DEPLOYMENT:
+                embedding_model = "sentence-transformers/all-MiniLM-L6-v2"  # 最小模型
+                print(f"🔧 Render 環境使用輕量級模型: {embedding_model}")
+            
+            embedder = Embedder(embedding_model, settings.BATCH_SIZE)
+            
+            # 記憶體清理
+            cleanup_memory()
+            
             vector_store = VectorStore(
-                settings.VECTOR_DB_PATH, 
-                settings.METADATA_DB_PATH, 
+                ":memory:" if IS_RENDER_DEPLOYMENT else settings.VECTOR_DB_PATH,  # Render 環境使用記憶體儲存
+                ":memory:" if IS_RENDER_DEPLOYMENT else settings.METADATA_DB_PATH, 
                 settings.EMBEDDING_DIMENSION
             )
             
@@ -86,9 +118,16 @@ def initialize_system():
                 notion_client, text_processor, embedder, vector_store, settings
             )
             
-            # 3. 初始化對話記憶管理器
+            # 3. 初始化對話記憶管理器（降低記憶體使用）
             print("💭 初始化對話記憶管理器...")
             conversation_settings = settings.get_conversation_settings()
+            
+            # Render 環境降低記憶體使用
+            if IS_RENDER_DEPLOYMENT:
+                conversation_settings['timeout_minutes'] = 10  # 縮短逾時
+                conversation_settings['max_conversation_length'] = 5  # 減少對話長度
+                conversation_settings['cleanup_interval_minutes'] = 2  # 頻繁清理
+            
             conversation_memory = ConversationMemory(
                 timeout_minutes=conversation_settings['timeout_minutes'],
                 max_conversation_length=conversation_settings['max_conversation_length'],
@@ -104,7 +143,7 @@ def initialize_system():
                 line_channel_access_token=settings.LINE_CHANNEL_ACCESS_TOKEN
             )
             
-            # 5. 檢查是否需要處理 Notion 內容
+            # 5. 處理 Notion 內容（記憶體最佳化）
             print("📄 檢查 Notion 內容...")
             status = rag_engine.get_system_status()
             if status['vector_database']['total_documents'] == 0:
@@ -112,6 +151,8 @@ def initialize_system():
                 success = rag_engine.process_notion_page(settings.NOTION_PAGE_ID)
                 if success:
                     print("✅ Notion 內容處理完成！")
+                    # 立即清理記憶體
+                    cleanup_memory()
                 else:
                     print("❌ Notion 內容處理失敗")
                     return False
@@ -119,6 +160,9 @@ def initialize_system():
                 print(f"📊 已載入 {status['vector_database']['total_documents']} 個文件片段")
             
             print("🎉 連續對話 RAG 系統初始化完成！")
+            
+            # 最終記憶體清理
+            cleanup_memory()
             
             # 執行記憶體清理
             gc.collect()
@@ -200,7 +244,7 @@ def callback():
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    """處理文字訊息事件"""
+    """處理文字訊息事件（Render 最佳化版本）"""
     global linebot_handler
     
     try:
@@ -212,6 +256,10 @@ def handle_message(event):
         
         # 使用 LINE Bot 處理器處理訊息
         linebot_handler.handle_text_message(event)
+        
+        # Render 環境記憶體清理
+        if IS_RENDER_DEPLOYMENT:
+            cleanup_memory()
         
         # 執行記憶體清理 (Render 環境更積極清理)
         if IS_RENDER_DEPLOYMENT:
@@ -302,17 +350,33 @@ def clear_all_memory():
 
 if __name__ == '__main__':
     print("🚀 啟動連續對話 LINE Bot 服務...")
-    print(f"📡 服務位址: http://{settings.FLASK_HOST}:{settings.FLASK_PORT}")
-    print(f"🔗 Webhook URL: http://{settings.FLASK_HOST}:{settings.FLASK_PORT}/callback")
-    print(f"💚 健康檢查: http://{settings.FLASK_HOST}:{settings.FLASK_PORT}/health")
-    print(f"📊 統計資訊: http://{settings.FLASK_HOST}:{settings.FLASK_PORT}/stats")
+    
+    # 檢查環境
+    if IS_RENDER_DEPLOYMENT:
+        print("🌐 Render 環境模式啟動")
+        # Render 環境特殊設定
+        port = int(os.environ.get('PORT', 10000))
+        host = '0.0.0.0'
+        debug = False
+    else:
+        print("💻 本地開發環境模式啟動")
+        # 本地環境設定
+        port = settings.FLASK_PORT
+        host = settings.FLASK_HOST
+        debug = settings.FLASK_DEBUG
+    
+    print(f"📡 服務位址: http://{host}:{port}")
+    print(f"🔗 Webhook URL: http://{host}:{port}/callback")
+    print(f"💚 健康檢查: http://{host}:{port}/health")
+    print(f"📊 統計資訊: http://{host}:{port}/stats")
     
     try:
         app.run(
-            host=settings.FLASK_HOST,
-            port=settings.FLASK_PORT,
-            debug=settings.FLASK_DEBUG,
-            threaded=True  # 啟用多線程支援
+            host=host,
+            port=port,
+            debug=debug,
+            threaded=True,  # 啟用多線程支援
+            use_reloader=False  # Render 環境避免重載器
         )
     except KeyboardInterrupt:
         print("\n👋 收到停止信號，正在關閉服務...")

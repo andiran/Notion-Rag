@@ -5,13 +5,30 @@ class Settings:
     """系統設定管理"""
     
     def __init__(self):
+        # 檢查是否在 Render 環境
+        self.IS_RENDER = bool(os.getenv('RENDER') or os.getenv('RENDER_SERVICE_ID'))
+        
         # 檢測 Render 雲端環境
-        self.IS_RENDER_DEPLOYMENT = self._get_setting("RENDER_DEPLOYMENT", "false").lower() == "true"
+        self.IS_RENDER_DEPLOYMENT = self._get_setting("RENDER_DEPLOYMENT", "false").lower() == "true" or self.IS_RENDER
         self.USE_MEMORY_STORAGE = self._get_setting("USE_MEMORY_STORAGE", "false").lower() == "true"
         self.MEMORY_LIMIT_MB = int(self._get_setting("MEMORY_LIMIT", "450"))
         
         if self.IS_RENDER_DEPLOYMENT:
-            print("🌐 檢測到 Render 雲端環境，啟用最佳化設定")
+            print("🌐 檢測到 Render 部署環境")
+            # Render 環境記憶體最佳化設定
+            self.CHUNK_SIZE = 300  # 減少分塊大小
+            self.CHUNK_OVERLAP = 25  # 減少重疊
+            self.TOP_K = 3  # 減少檢索數量
+            self.BATCH_SIZE = 2  # 減少批次大小
+            self.EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # 最小模型
+            
+            # 強制使用記憶體儲存
+            self.VECTOR_DB_PATH = ":memory:"
+            self.METADATA_DB_PATH = ":memory:"
+            
+            # 降低對話記憶使用
+            self.CONVERSATION_TIMEOUT_MINUTES = 10
+            self.MAX_CONVERSATION_LENGTH = 5
         
         # 從環境變數或設定檔讀取Notion設定
         self.NOTION_TOKEN = self._get_setting("NOTION_TOKEN")
@@ -25,26 +42,22 @@ class Settings:
             raise ValueError("請設定 NOTION_PAGE_ID 環境變數或在 config/.env 檔案中設定（可使用完整URL）")
         
         # 向量嵌入設定 (Render 環境優化)
-        if self.IS_RENDER_DEPLOYMENT:
-            # 使用更小的模型以節省記憶體
-            self.EMBEDDING_MODEL = self._get_setting("EMBEDDING_MODEL") or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-            self.BATCH_SIZE = int(self._get_setting("BATCH_SIZE") or "4")  # 降低批次大小
-        else:
+        if not self.IS_RENDER_DEPLOYMENT:
+            # 只有在非 Render 環境時才設定這些值（如果上面沒有設定的話）
             self.EMBEDDING_MODEL = self._get_setting("EMBEDDING_MODEL") or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
             self.BATCH_SIZE = int(self._get_setting("BATCH_SIZE") or "16")
             
         self.EMBEDDING_DIMENSION = int(self._get_setting("EMBEDDING_DIMENSION") or "384")
         
         # 文本分割設定 (Render 環境優化)
-        if self.IS_RENDER_DEPLOYMENT:
-            self.CHUNK_SIZE = int(self._get_setting("CHUNK_SIZE") or "400")  # 稍微減少
-            self.CHUNK_OVERLAP = int(self._get_setting("CHUNK_OVERLAP") or "40")
-        else:
+        if not self.IS_RENDER_DEPLOYMENT:
+            # 只有在非 Render 環境時才設定這些值（如果上面沒有設定的話）
             self.CHUNK_SIZE = int(self._get_setting("CHUNK_SIZE") or "500")
             self.CHUNK_OVERLAP = int(self._get_setting("CHUNK_OVERLAP") or "50")
         
         # 檢索設定
-        self.TOP_K = int(self._get_setting("TOP_K") or "5")
+        if not self.IS_RENDER_DEPLOYMENT:
+            self.TOP_K = int(self._get_setting("TOP_K") or "5")
         self.SIMILARITY_THRESHOLD = float(self._get_setting("SIMILARITY_THRESHOLD") or "0.7")
         
         # LLM設定（可選擇OpenAI或本地模型）
@@ -53,16 +66,21 @@ class Settings:
         self.OPENAI_MODEL = self._get_setting("OPENAI_MODEL") or "gpt-3.5-turbo"
         
         # 資料庫路徑 (Render 環境使用記憶體儲存)
-        if self.IS_RENDER_DEPLOYMENT and self.USE_MEMORY_STORAGE:
-            # 使用記憶體資料庫
-            self.VECTOR_DB_PATH = ":memory:"
-            self.METADATA_DB_PATH = ":memory:"
-            self.CACHE_PATH = "/tmp/cache"  # 使用臨時目錄
-            print("💾 使用記憶體儲存模式 (適用於 Render)")
+        if not self.IS_RENDER_DEPLOYMENT:
+            # 只有在非 Render 環境時才設定本地路徑
+            if self.USE_MEMORY_STORAGE:
+                # 使用記憶體資料庫
+                self.VECTOR_DB_PATH = ":memory:"
+                self.METADATA_DB_PATH = ":memory:"
+                self.CACHE_PATH = "/tmp/cache"  # 使用臨時目錄
+                print("💾 使用記憶體儲存模式 (適用於 Render)")
+            else:
+                self.VECTOR_DB_PATH = self._get_setting("VECTOR_DB_PATH") or "./vector_db"
+                self.METADATA_DB_PATH = self._get_setting("METADATA_DB_PATH") or "./metadata.db"
+                self.CACHE_PATH = self._get_setting("CACHE_PATH") or "./cache"
         else:
-            self.VECTOR_DB_PATH = self._get_setting("VECTOR_DB_PATH") or "./vector_db"
-            self.METADATA_DB_PATH = self._get_setting("METADATA_DB_PATH") or "./metadata.db"
-            self.CACHE_PATH = self._get_setting("CACHE_PATH") or "./cache"
+            # Render 環境已經在上面設定了
+            self.CACHE_PATH = "/tmp/cache"
         
         # 更新設定
         self.UPDATE_INTERVAL = int(self._get_setting("UPDATE_INTERVAL") or "3600")  # 秒（1小時）
@@ -72,8 +90,10 @@ class Settings:
         self.LINE_CHANNEL_ACCESS_TOKEN = self._get_setting("LINE_CHANNEL_ACCESS_TOKEN")
         
         # 對話記憶設定
-        self.CONVERSATION_TIMEOUT_MINUTES = int(self._get_setting("CONVERSATION_TIMEOUT_MINUTES") or "30")
-        self.MAX_CONVERSATION_LENGTH = int(self._get_setting("MAX_CONVERSATION_LENGTH") or "20")
+        if not self.IS_RENDER_DEPLOYMENT:
+            # 只有在非 Render 環境時才設定這些值（如果上面沒有設定的話）
+            self.CONVERSATION_TIMEOUT_MINUTES = int(self._get_setting("CONVERSATION_TIMEOUT_MINUTES") or "30")
+            self.MAX_CONVERSATION_LENGTH = int(self._get_setting("MAX_CONVERSATION_LENGTH") or "20")
         self.CLEANUP_INTERVAL_MINUTES = int(self._get_setting("CLEANUP_INTERVAL_MINUTES") or "5")
         self.MAX_CONTEXT_TOKENS = int(self._get_setting("MAX_CONTEXT_TOKENS") or "2000")
         

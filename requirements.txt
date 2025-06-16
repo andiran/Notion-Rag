@@ -1,40 +1,31 @@
-# 網路請求
-requests>=2.31.0
-
-# 向量嵌入 (使用較小的模型)
-sentence-transformers>=2.2.2
-
-# 向量資料庫
-faiss-cpu>=1.7.4
-
-# 數值計算
-numpy>=1.24.3
-
-# 環境變數管理
-python-dotenv>=1.0.0
-
-# OpenAI API (可選)
-openai>=1.3.0
-
-# PyTorch (CPU 版本，更新版本範圍)
-torch>=2.0.0
-torchvision>=0.15.0
-torchaudio>=2.0.0
+# 核心 Web 框架
+flask>=2.3.0
+gunicorn>=21.2.0
 
 # LINE Bot SDK
 line-bot-sdk>=3.0.0
 
-# Web 框架
-flask>=2.3.0
+# HTTP 請求
+requests>=2.31.0
 
-# WSGI 服務器 (用於生產環境)
-gunicorn>=21.2.0
+# 環境變數管理
+python-dotenv>=1.0.0
 
-# 記憶體監控
+# 輕量級數值計算
+numpy>=1.24.3
+
+# 向量資料庫（CPU 版本）
+faiss-cpu>=1.7.4
+
+# 機器學習（記憶體最佳化版本）
+torch>=2.0.0 --index-url https://download.pytorch.org/whl/cpu
+sentence-transformers>=2.2.2
+
+# OpenAI（可選）
+openai>=1.3.0
+
+# 系統監控
 psutil>=5.9.0
 
-# 數據處理
-pandas>=2.0.0
-
-# HTTP 客戶端 (用於健康檢查)
+# HTTP 客戶端
 httpx>=0.24.0

@@ -1,17 +1,21 @@
 services:
   - type: web
     name: notion-rag-linebot
-    runtime: docker
+    env: python
     plan: free
-    dockerfilePath: ./deploy/Dockerfile
-    healthCheckPath: /health
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --worker-class sync --max-requests 1000 --max-requests-jitter 100 linebot_app:app
     envVars:
       - key: PYTHON_VERSION
-        value: "3.9.19"
+        value: 3.11.9
+      - key: MEMORY_LIMIT
+        value: 400
+      - key: USE_LIGHTWEIGHT_MODEL
+        value: true
+      - key: TOKENIZERS_PARALLELISM
+        value: false
       - key: RENDER_DEPLOYMENT
         value: "true"
-      - key: MEMORY_LIMIT
-        value: "450"
       - key: USE_MEMORY_STORAGE
         value: "true"
       - key: BATCH_SIZE
@@ -21,8 +25,6 @@ services:
       - key: FLASK_PORT
         value: "10000"
       - key: FLASK_DEBUG
-        value: "false"
-      - key: TOKENIZERS_PARALLELISM
         value: "false"
       - key: OMP_NUM_THREADS
         value: "1"
